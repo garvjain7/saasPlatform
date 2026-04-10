@@ -1,0 +1,15 @@
+{
+    "problem_type": "regression",
+    "model": "LinearRegression",
+    "score": 7.157236636012695e-07,
+    "features": [
+        "order_id",
+        "order_date",
+        "product",
+        "category",
+        "region",
+        "quantity",
+        "unit_price"
+    ],
+    "target": "sales"
+}

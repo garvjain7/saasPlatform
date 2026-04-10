@@ -1,0 +1,20 @@
+{
+    "original_shape": [
+        34,
+        8
+    ],
+    "missing_values": {
+        "order_id": 0,
+        "order_date": 0,
+        "product": 0,
+        "category": 0,
+        "region": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "sales": 0
+    },
+    "cleaned_shape": [
+        34,
+        8
+    ]
+}
