@@ -13,6 +13,7 @@
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.70.4",
     "cors": "^2.8.5",
+    "csv-parse": "^6.2.1",
     "dotenv": "^17.4.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.3.0",
@@ -22,7 +23,8 @@
     "multer": "^2.0.2",
     "nodemailer": "^8.0.5",
     "pg": "^8.20.0",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "jest": "^30.2.0",

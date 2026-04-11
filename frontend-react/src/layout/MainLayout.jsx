@@ -8,7 +8,7 @@ const MainLayout = ({ children }) => {
   const location = useLocation();
   const [datasets, setDatasets] = useState([]);
   const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
-  const role = localStorage.getItem('role');
+  const role = sessionStorage.getItem('role');
 
   useEffect(() => {
     const fetchDatasets = async () => {

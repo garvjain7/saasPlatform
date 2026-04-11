@@ -13,10 +13,17 @@ const AssignUserModal = ({ dataset, onClose, onUpdate }) => {
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
+      const dsId = dataset.dataset_id || dataset.id;
+      if (!dsId) {
+        setError('Invalid Dataset ID');
+        setLoading(false);
+        return;
+      }
+
       try {
         const [allUsersRes, assignedRes] = await Promise.all([
           getUsers('employee'),
-          getDatasetAssignments(dataset.id)
+          getDatasetAssignments(dsId)
         ]);
         
         setEmployees(allUsersRes.users || []);
@@ -29,12 +36,13 @@ const AssignUserModal = ({ dataset, onClose, onUpdate }) => {
       }
     };
     fetchData();
-  }, [dataset.id]);
+  }, [dataset.dataset_id, dataset.id]);
 
   const handleAssign = async (userId) => {
     setProcessing(userId);
+    const dsId = dataset.dataset_id || dataset.id;
     try {
-      const res = await assignDataset(dataset.id, [userId]);
+      const res = await assignDataset(dsId, [userId]);
       if (res.success) {
         const user = employees.find(u => u.user_id === userId);
         setAssignedUsers(prev => [...prev, user]);
@@ -49,8 +57,9 @@ const AssignUserModal = ({ dataset, onClose, onUpdate }) => {
 
   const handleUnassign = async (userId) => {
     setProcessing(userId);
+    const dsId = dataset.dataset_id || dataset.id;
     try {
-      const res = await unassignDataset(dataset.id, userId);
+      const res = await unassignDataset(dsId, userId);
       if (res.success) {
         setAssignedUsers(prev => prev.filter(u => u.user_id !== userId));
         if (onUpdate) onUpdate();

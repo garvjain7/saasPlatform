@@ -42,11 +42,11 @@ export default function AdminDashboard() {
   const [assignModal, setAssignModal] = useState(null);
   const [datasetAssignments, setDatasetAssignments] = useState({});
 
-  const role = localStorage.getItem('role');
+  const role = sessionStorage.getItem('role');
   if (role !== 'admin') return <Navigate to="/datasets" />;
 
   const getAuthHeaders = () => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
 
@@ -168,7 +168,7 @@ export default function AdminDashboard() {
   const processingDatasets = datasets.filter(d => d.status === 'processing').length;
 
   return (
-    <AdminLayout title="Dashboard" subtitle={`Welcome, ${localStorage.getItem('userName') || 'Admin'}`}>
+    <AdminLayout title="Dashboard" subtitle={`Welcome, ${sessionStorage.getItem('userName') || 'Admin'}`}>
       {/* Stat Cards */}
       <div className="admin-stat-grid">
         <div className="admin-stat-card accent">
@@ -304,7 +304,8 @@ export default function AdminDashboard() {
                   >
                     <div className="admin-act-dot" style={{ background: statusColor }} />
                     <div className="admin-act-text">
-                      <strong>{log.user_name || 'System'}</strong> {log.detail || log.event_description || log.event_type}
+                       {/* Make sure userName is valid string to prevent crashing */}
+                      <strong>{String(log.user_name || 'System')}</strong> {log.detail || log.event_description || log.event_type}
                     </div>
                     <div className="admin-act-time">{formatDate(log.created_at)}</div>
                   </div>
@@ -322,101 +323,72 @@ export default function AdminDashboard() {
 
       {/* Row 2: Datasets + Storage/Charts */}
       <div className="admin-two-col">
-        {/* Recent Datasets */}
+        {/* Recent Datasets - Optimized High Density List matching screenshot */}
         <div>
           <div className="admin-section-header">
             <div>
               <div className="admin-section-title">Recent Datasets</div>
-              <div className="admin-section-sub">{datasets.length} total uploads</div>
+              <div className="admin-section-sub">All company uploads</div>
             </div>
-            <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => navigate('/admin/datasets')}>View All →</button>
+            <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => navigate('/datasets')}>
+              View All →
+            </button>
           </div>
-          <div className="admin-table-wrap" style={{ background: 'transparent', border: 'none' }}>
-            {loading ? (
-              <div style={{ padding: '40px', textAlign: 'center' }}>
-                <Loader size={24} style={{ animation: 'spin 1s linear infinite', color: 'var(--primary)' }} />
-              </div>
-            ) : datasets.length === 0 ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                No datasets uploaded yet
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-                {recentDatasets.map((ds, i) => (
-                  <div key={ds.id} className="glass-panel" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ padding: '16px 20px', flex: 1 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(88,166,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Database size={16} color="var(--primary)" />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{ds.name}</div>
-                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{ds.size}</div>
-                          </div>
+          <div className="admin-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>DATASET</th>
+                  <th>UPLOADED BY</th>
+                  <th>STATUS</th>
+                  <th>SIZE</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                   Array.from({ length: 4 }).map((_, i) => (
+                    <tr key={i}>
+                      <td colSpan={4}><div style={{ height: 40, width: '100%', background: 'rgba(255,255,255,0.02)', borderRadius: 4 }} /></td>
+                    </tr>
+                  ))
+                ) : datasets.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                      No datasets uploaded yet
+                    </td>
+                  </tr>
+                ) : (
+                  recentDatasets.slice(0, 5).map((ds, i) => (
+                    <tr key={ds.id} style={{ animation: `adminSlideIn 0.4s cubic-bezier(0.16,1,0.3,1) ${0.2 + i * 0.05}s both` }}>
+                      <td>
+                        <div style={{ padding: '4px 0' }}>
+                          <div style={{ fontSize: '14px', fontWeight: 600, color: '#fff', marginBottom: '2px' }}>{ds.name}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{ds.meta}</div>
                         </div>
-                        {getStatusBadge(ds.status)}
-                      </div>
-                      
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>{ds.meta}</div>
-                      
-                      <div style={{ marginBottom: 16 }}>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Access Management</div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <div style={{ display: 'flex', marginLeft: 4 }}>
-                            {datasetAssignments[ds.id] && datasetAssignments[ds.id].length > 0 ? (
-                              <div style={{ display: 'flex', alignItems: 'center' }}>
-                                {datasetAssignments[ds.id].slice(0, 3).map((user, idx) => (
-                                  <div 
-                                    key={user.user_id} 
-                                    title={user.full_name}
-                                    style={{ 
-                                      width: 24, height: 24, borderRadius: '50%', 
-                                      background: 'var(--primary)', border: '2px solid var(--bg-dark)',
-                                      marginLeft: idx === 0 ? 0 : -8,
-                                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                      fontSize: 9, fontWeight: 700, color: '#fff',
-                                      zIndex: 3 - idx
-                                    }}
-                                  >
-                                    {user.full_name?.charAt(0)}
-                                  </div>
-                                ))}
-                                {datasetAssignments[ds.id].length > 3 && (
-                                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 8 }}>
-                                    +{datasetAssignments[ds.id].length - 3} more
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <span style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>No users assigned</span>
-                            )}
-                          </div>
-                          <button 
-                            className="admin-btn admin-btn-ghost admin-btn-sm" 
-                            style={{ fontSize: 10, padding: '4px 8px', border: '1px solid var(--border-color)' }}
-                            onClick={() => setAssignModal(ds)}
-                          >
-                            Assign Users
-                          </button>
+                      </td>
+                      <td>
+                        <div className="admin-user-cell" style={{ gap: '10px' }}>
+                          <div className="admin-u-avatar admin-u-avatar-sm" style={{ background: ds.uploaderColor }}>{ds.uploader}</div>
+                          <div className="admin-u-name" style={{ fontSize: '13px' }}>{ds.uploaderName}</div>
                         </div>
-                      </div>
-                    </div>
-
-                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 16px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: 8 }}>
-                      <button className="admin-btn admin-btn-primary admin-btn-sm" style={{ flex: 1, fontSize: 10, height: 28 }}
-                        onClick={() => navigate(ds.status === 'ready' || ds.status === 'completed' ? `/employee/visualization?ds=${ds.id}&name=${encodeURIComponent(ds.name)}` : `/employee/cleaning?ds=${ds.id}&name=${encodeURIComponent(ds.name)}`)}>
-                        {ds.status === 'ready' || ds.status === 'completed' ? <><BarChart3 size={12} /> View</> : <><Sparkles size={12} /> Clean</>}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                      </td>
+                      <td>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', fontSize: '11px', fontWeight: 500, color: ds.status === 'ready' ? '#3fb950' : ds.status === 'processing' ? '#d29922' : '#f85149' }}>
+                          {ds.status === 'ready' ? '✓ Ready' : ds.status === 'processing' ? '⟳ Cleaning' : ds.status === 'chatbot' ? '● Chatbot On' : ds.status}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{ds.size}</div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
 
-        {/* Storage + Query Volume */}
+        {/* Distribution + Chart */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <div className="admin-section-header">
@@ -448,7 +420,7 @@ export default function AdminDashboard() {
 
           <div>
             <div className="admin-section-header">
-              <div className="admin-section-title">Query volume (7 days, from DB)</div>
+              <div className="admin-section-title">Query volume (7 days)</div>
             </div>
             <div className="admin-table-wrap" style={{ padding: '14px 16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'DM Mono', monospace", fontSize: '10px', color: 'var(--text-muted)', marginBottom: 4 }}>
@@ -469,9 +441,6 @@ export default function AdminDashboard() {
                   />
                 ))}
               </div>
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: 'var(--text-muted)', marginTop: 8 }}>
-                Based on dataset usage
-              </div>
             </div>
           </div>
         </div>
@@ -479,15 +448,8 @@ export default function AdminDashboard() {
 
       <style>{`
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .admin-u-avatar-sm { width: 24px; height: 24px; font-size: 10px; }
       `}</style>
-      
-      {assignModal && (
-        <AssignUserModal 
-          dataset={assignModal} 
-          onClose={() => setAssignModal(null)} 
-          onUpdate={() => fetchAssignments(assignModal.id)}
-        />
-      )}
     </AdminLayout>
   );
 }

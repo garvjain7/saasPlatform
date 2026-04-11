@@ -34,9 +34,9 @@ export default function AdminLayout({ children, title, subtitle }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   
-  const email = localStorage.getItem('email') || 'admin@datainsights.ai';
+  const email = sessionStorage.getItem('email') || sessionStorage.getItem('userEmail') || 'admin@datainsights.ai';
   // Use userName from local storage if available
-  const adminName = localStorage.getItem('userName') || email.split('@')[0];
+  const adminName = sessionStorage.getItem('userName') || (email ? email.split('@')[0] : 'Admin');
   const initials = adminName.slice(0, 2).toUpperCase();
 
   useEffect(() => {
@@ -49,10 +49,11 @@ export default function AdminLayout({ children, title, subtitle }) {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('role');
-    localStorage.removeItem('email');
-    localStorage.removeItem('userName');
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('role');
+    sessionStorage.removeItem('email');
+    sessionStorage.removeItem('userEmail');
+    sessionStorage.removeItem('userName');
     navigate('/login');
   };
 

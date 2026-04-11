@@ -37,7 +37,7 @@ export default function SelectRole() {
 
     const handleContinue = () => {
         if (!selectedRole) return;
-        localStorage.setItem("role", selectedRole);
+        sessionStorage.setItem("role", selectedRole);
         if (selectedRole === "admin") {
             navigate("/admin-login");
         } else {

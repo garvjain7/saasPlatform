@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, FileText, Eye, ChevronDown, ChevronUp, RefreshCw, BarChart3, Trash2, AlertTriangle, X, Sparkles } from 'lucide-react';
 import axios from 'axios';
-import { getDatasets, deleteDataset } from '../../services/api';
+import { getDatasets, deleteDataset, getDatasetPreview } from '../../services/api';
 import EmployeeLayout from '../../layout/EmployeeLayout';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
@@ -65,7 +65,7 @@ const EmployeeDatasetsPage = () => {
           const mapped = res.data.map((d, i) => ({
             id: d.dataset_id || d._id || `ds-${i}`,
             dataset_id: d.dataset_id || d._id,
-            name: d.filename?.replace(/\.\w+$/, '') || d.name?.replace(/\.\w+$/, '') || `Dataset ${i + 1}`,
+            name: d.name || d.dataset_name || d.filename?.replace(/\.\w+$/, '') || `Dataset ${i + 1}`,
             type: d.filename?.split('.').pop() || d.name?.split('.').pop() || 'csv',
             status: d.status === 'completed' ? 'ready' : d.status === 'processing' ? 'cleaning' : 'new',
             source: 'server',
@@ -109,17 +109,14 @@ const EmployeeDatasetsPage = () => {
     });
 
     try {
-      const token = localStorage.getItem('token');
-      const res = await axios.get(`${API_URL}/cleaned-data/${dsId}?limit=50&page=1`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (res.data && res.data.success && res.data.rows) {
+      const res = await getDatasetPreview(dsId);
+      if (res.success) {
         setPreviewModal(prev => ({
           ...prev,
           loading: false,
-          data: res.data.rows || [],
-          headers: res.data.headers || [],
-          rows: res.data.totalRows,
+          data: res.data || [],
+          headers: res.data && res.data.length > 0 ? Object.keys(res.data[0]) : [],
+          rows: res.total_rows_previewed || (res.data ? res.data.length : 0),
           error: null,
         }));
       } else {
@@ -127,7 +124,7 @@ const EmployeeDatasetsPage = () => {
           ...prev, 
           loading: false, 
           data: [], 
-          error: res.data?.message || 'Failed to load data' 
+          error: res.message || 'Failed to load data' 
         }));
       }
     } catch (err) {
@@ -368,7 +365,7 @@ const EmployeeDatasetsPage = () => {
               <div style={{ flex: 1 }}>
                 <div className="emp-modal-title">{previewModal.name}</div>
                 <div className="emp-modal-subtitle">
-                  {previewModal.type?.toUpperCase()} · {previewModal.version} · First 50 rows · Read-only
+                  First 50 rows • Read-only • Total: {previewModal.rows?.toLocaleString() || '—'} rows
                 </div>
               </div>
               <button className="emp-btn emp-btn-ghost emp-btn-sm" onClick={() => setPreviewModal(null)}>
@@ -376,14 +373,7 @@ const EmployeeDatasetsPage = () => {
               </button>
             </div>
 
-            <div className="emp-modal-info">
-              {previewModal.rows && <span className="emp-modal-info-item">📋 <strong>{previewModal.rows.toLocaleString()}</strong> total rows</span>}
-              {previewModal.cols && <span className="emp-modal-info-item">⊞ <strong>{previewModal.cols}</strong> columns</span>}
-              {previewModal.size && <span className="emp-modal-info-item">💾 <strong>{previewModal.size}</strong></span>}
-              <span className="emp-modal-info-item">Version <strong>{previewModal.version}</strong></span>
-            </div>
-
-            <div className="emp-modal-body" style={{ overflowX: 'auto' }}>
+            <div className="emp-modal-body" style={{ overflowX: 'auto', padding: '0 1.25rem' }}>
               {previewModal.loading ? (
                 <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                   <div className="spin" style={{ marginBottom: '1rem' }}>
@@ -427,18 +417,18 @@ const EmployeeDatasetsPage = () => {
                   <table className="emp-modal-table">
                     <thead>
                       <tr>
-                        <th>#</th>
+                        <th style={{ width: '40px' }}>#</th>
                         {(previewModal.headers || Object.keys(previewModal.data[0])).map(col => (
-                          <th key={col}>{col}</th>
+                          <th key={col} style={{ whiteSpace: 'nowrap' }}>{col}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {previewModal.data.map((row, i) => (
                         <tr key={i}>
-                          <td style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
+                          <td style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{i + 1}</td>
                           {(previewModal.headers || Object.keys(previewModal.data[0])).map((col, ci) => (
-                            <td key={ci} style={{ fontFamily: "'DM Mono', monospace", whiteSpace: 'nowrap', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <td key={ci} style={{ fontFamily: "'DM Mono', monospace", whiteSpace: 'nowrap', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {row[col] === null || row[col] === undefined || row[col] === '' ? <span style={{ color: 'var(--text-muted)', opacity: 0.5 }}>null</span> : String(row[col])}
                             </td>
                           ))}
@@ -454,15 +444,13 @@ const EmployeeDatasetsPage = () => {
               )}
             </div>
 
-            <div className="emp-modal-footer">
-              <div className="emp-modal-footer-info">
-                {previewModal.loading ? 'Loading...' : `Showing first ${previewModal.data.length} of ${previewModal.rows?.toLocaleString() || '—'} rows`}
+            <div className="emp-modal-footer" style={{ padding: '1rem 1.5rem' }}>
+              <div className="emp-modal-footer-info" style={{ paddingLeft: '0.5rem' }}>
+                {previewModal.loading ? 'Loading...' : `Showing first ${previewModal.data.length} rows`}
               </div>
               <div className="emp-modal-footer-actions">
                 <button className="emp-btn emp-btn-ghost emp-btn-sm" onClick={() => setPreviewModal(null)}>Close</button>
-                <button className="emp-btn emp-btn-primary emp-btn-sm" onClick={() => { setPreviewModal(null); navigate('/employee/cleaning'); }}>
-                  Open in Cleaning →
-                </button>
+                {/* Cleaning button hidden as requested */}
               </div>
             </div>
           </div>

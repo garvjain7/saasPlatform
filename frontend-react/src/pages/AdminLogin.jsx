@@ -97,10 +97,10 @@ export default function AdminLogin() {
                 return;
             }
 
-            localStorage.setItem("token", res.data.token);
-            localStorage.setItem("role", res.data.role);
-            localStorage.setItem("userName", res.data.name || email.split('@')[0]);
-            localStorage.setItem("userEmail", res.data.email);
+            sessionStorage.setItem("token", res.data.token);
+            sessionStorage.setItem("role", res.data.role);
+            sessionStorage.setItem("userName", res.data.name || email.split('@')[0]);
+            sessionStorage.setItem("userEmail", res.data.email);
             
             setUserData({
                 name: res.data.name || email.split('@')[0],

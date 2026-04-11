@@ -108,10 +108,10 @@ export default function EmployeeLogin() {
             const role = res.data.role;
             const name = res.data.name || email.split('@')[0];
 
-            localStorage.setItem("token", res.data.token);
-            localStorage.setItem("role", role);
-            localStorage.setItem("userName", name);
-            localStorage.setItem("userEmail", res.data.email);
+            sessionStorage.setItem("token", res.data.token);
+            sessionStorage.setItem("role", role);
+            sessionStorage.setItem("userName", name);
+            sessionStorage.setItem("userEmail", res.data.email);
 
             setUserData({
                 name: name,

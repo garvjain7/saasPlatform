@@ -104,9 +104,9 @@ export default function Login() {
                 return;
             }
 
-            localStorage.setItem("token", res.data.token);
-            localStorage.setItem("role", res.data.role);
-            localStorage.setItem("userName", res.data.name || email.split('@')[0]);
+            sessionStorage.setItem("token", res.data.token);
+            sessionStorage.setItem("role", res.data.role);
+            sessionStorage.setItem("userName", res.data.name || email.split('@')[0]);
             nav("/employee/dashboard");
         } catch (err) {
             const msg = err.response?.data?.message || "Invalid credentials. Please try again.";

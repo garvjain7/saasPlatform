@@ -15,7 +15,7 @@ import { getDashboardConfig, getDatasets } from '../../services/api';
 const api = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
 const fetchCleanedData = async (datasetId, params = {}) => {
-  const token = localStorage.getItem('token');
+  const token = sessionStorage.getItem('token');
   const queryStr = new URLSearchParams();
   if (params.filters) queryStr.set('filters', JSON.stringify(params.filters));
   if (params.search) queryStr.set('search', params.search);

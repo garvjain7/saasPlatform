@@ -75,7 +75,7 @@ const DatasetAnalysisPage = () => {
   const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
   const getAuthHeaders = () => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
 

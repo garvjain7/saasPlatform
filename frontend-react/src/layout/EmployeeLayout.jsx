@@ -16,7 +16,7 @@ const navItems = [
 const EmployeeLayout = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [userName, setUserName] = useState(localStorage.getItem('userName') || 'Employee');
+  const [userName, setUserName] = useState(sessionStorage.getItem('userName') || 'Employee');
   
   // Safe parsing to prevent application crashes if userName gets resolved as null from backend
   const safeName = userName || 'Employee';
@@ -33,9 +33,9 @@ const EmployeeLayout = ({ children }) => {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('role');
-    localStorage.removeItem('userName');
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('role');
+    sessionStorage.removeItem('userName');
     navigate('/');
   };
 
