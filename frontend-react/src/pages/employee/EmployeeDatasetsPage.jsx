@@ -78,6 +78,7 @@ const EmployeeDatasetsPage = () => {
             versions: [],
             uploadedBy: d.uploaded_by_name || d.uploaded_by_email || 'Admin',
             uploadedByEmail: d.uploaded_by_email,
+            has_access: d.has_access,
           }));
           setDatasets(mapped);
         } else {
@@ -284,7 +285,7 @@ const EmployeeDatasetsPage = () => {
                         </div>
                       </div>
                     </div>
-                    <StatusBadge status={ds.status} />
+                    <StatusBadge status={!ds.has_access ? 'no-access' : ds.status} />
                   </div>
 
                   <div style={{ display: 'flex', gap: 20, marginBottom: 8 }}>
@@ -316,10 +317,12 @@ const EmployeeDatasetsPage = () => {
                 <div style={{ borderTop: '1px solid var(--border-color)', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(13,17,23,0.5)' }}>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button className="emp-btn emp-btn-ghost emp-btn-sm"
+                      disabled={!ds.has_access}
                       onClick={(e) => { e.stopPropagation(); openPreview(ds); }}>
                       <Eye size={12} /> Preview
                     </button>
                     <button className="emp-btn emp-btn-ghost emp-btn-sm"
+                      disabled={!ds.has_access}
                       onClick={(e) => { 
                         e.stopPropagation(); 
                         const dsId = ds.dataset_id || ds.id;
@@ -328,6 +331,7 @@ const EmployeeDatasetsPage = () => {
                       <BarChart3 size={12} /> Visualize
                     </button>
                     <button className="emp-btn emp-btn-primary emp-btn-sm"
+                      disabled={!ds.has_access}
                       onClick={(e) => { 
                         e.stopPropagation(); 
                         const dsId = ds.dataset_id || ds.id;
@@ -336,18 +340,20 @@ const EmployeeDatasetsPage = () => {
                       <Sparkles size={12} /> Clean
                     </button>
                   </div>
-                  <button 
-                    className="emp-btn emp-btn-ghost emp-btn-sm"
-                    onClick={(e) => { e.stopPropagation(); handleDelete(ds, e); }}
-                    style={{ color: 'var(--danger)' }}
-                    disabled={isDeleting === (ds.dataset_id || ds.id)}
-                  >
-                    {isDeleting === (ds.dataset_id || ds.id) ? (
-                      <RefreshCw size={12} className="spin" />
-                    ) : (
-                      <Trash2 size={12} />
-                    )}
-                  </button>
+                  {ds.has_access && (
+                    <button 
+                      className="emp-btn emp-btn-ghost emp-btn-sm"
+                      onClick={(e) => { e.stopPropagation(); handleDelete(ds, e); }}
+                      style={{ color: 'var(--danger)' }}
+                      disabled={isDeleting === (ds.dataset_id || ds.id)}
+                    >
+                      {isDeleting === (ds.dataset_id || ds.id) ? (
+                        <RefreshCw size={12} className="spin" />
+                      ) : (
+                        <Trash2 size={12} />
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             ))

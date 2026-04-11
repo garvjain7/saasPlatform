@@ -1,6 +1,8 @@
 import jwt from "jsonwebtoken";
 import { pool } from "../config/db.js";
 import { logEmployeeLogin } from "./activityController.js";
+import { v4 as uuidv4 } from "uuid";
+import { sendResetEmail } from "../utils/mailer.js";
 
 import bcrypt from "bcryptjs";
 
@@ -24,70 +26,7 @@ function hashCode(str) {
   return hash;
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  SIGNUP — Admin-only internal operation
-//  companyId must be provided (from admin's JWT)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-export const signup = async (req, res) => {
-  const { fullName, companyName, email, password, role, department, designation } = req.body;
 
-  if (!fullName) return res.status(400).json({ message: "Full Name is required" });
-  if (!companyName) return res.status(400).json({ message: "Company Name is required" });
-  if (!email) return res.status(400).json({ message: "Email is required" });
-  if (!password || password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
-
-  try {
-    // Check if user already exists
-    const existing = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
-    if (existing.rows.length > 0) {
-      return res.status(409).json({ message: "A user with this email already exists" });
-    }
-
-    // Validate company exists by name
-    const companyResult = await pool.query("SELECT company_id FROM companies WHERE company_name = $1", [companyName]);
-    if (companyResult.rows.length === 0) {
-      return res.status(400).json({ message: "Company does not exist in our records." });
-    }
-    const companyId = companyResult.rows[0].company_id;
-
-    // Check if there are any existing admins for this company
-    const adminResult = await pool.query("SELECT * FROM users WHERE company_id = $1 AND role = 'admin'", [companyId]);
-    
-    const resolvedName = fullName.trim();
-    const resolvedRole = role || "employee";
-    
-    // Auto-activate ONLY if this is the very first admin for this company. Otherwise, inactive by default.
-    let isActive = false;
-    if (resolvedRole === "admin" && adminResult.rows.length === 0) {
-       isActive = true;
-    }
-
-    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-
-    const newUser = await pool.query(
-      `INSERT INTO users (company_id, full_name, email, password_hash, role, department, designation, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING user_id, full_name`,
-      [companyId, resolvedName, email, passwordHash, resolvedRole, department || null, designation || null, isActive]
-    );
-
-    const userId = newUser.rows[0].user_id;
-
-    // Log the signup into activity_logs
-    await pool.query(
-      `INSERT INTO activity_logs (company_id, user_id, activity_type, activity_description, module_name, status, timestamp)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-      [companyId, userId, "SIGNUP", `New user ${resolvedName} signed up as ${resolvedRole}. ${!isActive ? 'Activation requested.' : 'Auto-activated.'}`, "AUTH", "ok"]
-    );
-
-    res.json({
-      message: isActive ? "Admin account created and auto-activated successfully." : "Account created successfully. Pending admin approval."
-    });
-  } catch (err) {
-    console.error("Signup error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  LOGIN
@@ -99,7 +38,7 @@ export const login = async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT user_id, company_id, full_name, email, password_hash, role, is_active
+      `SELECT user_id, company_id, full_name, email, password_hash, role, is_active, failed_attempts, lock_until
        FROM users
        WHERE email = $1`,
       [email]
@@ -111,13 +50,47 @@ export const login = async (req, res) => {
 
     const user = result.rows[0];
 
-    // Verify password
-    if (user.password_hash) {
-      const match = await bcrypt.compare(password, user.password_hash);
-      if (!match) {
-        return res.status(401).json({ message: "Invalid email or password" });
-      }
+    // Check lockout
+    if (user.lock_until && new Date(user.lock_until) > new Date()) {
+      const remainingMs = new Date(user.lock_until).getTime() - Date.now();
+      const remainingMins = Math.ceil(remainingMs / 60000);
+      return res.status(401).json({ 
+        message: `Too many failed attempts. Try again after ${remainingMins} minute${remainingMins !== 1 ? 's' : ''}.`,
+        locked: true 
+      });
     }
+
+    // Verify password
+    let isMatch = false;
+    if (user.password_hash) {
+      isMatch = await bcrypt.compare(password, user.password_hash);
+    }
+
+    if (!isMatch) {
+      const newAttempts = (user.failed_attempts || 0) + 1;
+      let updateQuery = "UPDATE users SET failed_attempts = $1";
+      const params = [newAttempts, user.user_id];
+      
+      let lockoutMessage = "";
+      if (newAttempts >= 3) {
+        updateQuery += ", lock_until = NOW() + INTERVAL '5 minutes'";
+        lockoutMessage = "Too many failed attempts. Try again after 5 minutes.";
+      } else {
+        const left = 3 - newAttempts;
+        lockoutMessage = `Invalid email or password. ${left} attempt${left !== 1 ? 's' : ''} left.`;
+      }
+      
+      updateQuery += " WHERE user_id = $2";
+      await pool.query(updateQuery, params);
+      
+      return res.status(401).json({ message: lockoutMessage });
+    }
+
+    // SUCCESS - Reset attempts and update last_login
+    await pool.query(
+      "UPDATE users SET failed_attempts = 0, lock_until = NULL, last_login = NOW() WHERE user_id = $1", 
+      [user.user_id]
+    );
 
     // Check active status
     if (!user.is_active) {
@@ -131,9 +104,6 @@ export const login = async (req, res) => {
     if (role === "admin" && user.role !== "admin") {
       return res.status(403).json({ message: "This account is not authorized for admin access" });
     }
-
-    // Update last_login
-    await pool.query("UPDATE users SET last_login = NOW() WHERE user_id = $1", [user.user_id]);
 
     const token = jwt.sign(
       { email, role: user.role, userId: user.user_id, companyId: user.company_id },
@@ -357,6 +327,107 @@ export const approveUser = async (req, res) => {
     }
   } catch (err) {
     console.error("approveUser error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  FORGOT PASSWORD
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ message: "Email is required" });
+  }
+
+  try {
+    const userResult = await pool.query("SELECT user_id, lock_until FROM users WHERE email = $1", [email]);
+    if (userResult.rows.length > 0) {
+      const user = userResult.rows[0];
+
+      // Check lockout
+      if (user.lock_until && new Date(user.lock_until) > new Date()) {
+        return res.status(401).json({ message: "Please wait before requesting password reset." });
+      }
+
+      const resetToken = uuidv4();
+      
+      // Invalidate existing active tokens for this user
+      await pool.query("UPDATE password_reset_tokens SET is_active = false WHERE user_id = $1", [user.user_id]);
+
+      // Insert new token with 15 mins expiry
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+      await pool.query(
+        "INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)",
+        [user.user_id, resetToken, expiresAt]
+      );
+
+      // Send email
+      await sendResetEmail(email, resetToken);
+    }
+    
+    // Always return generic response to prevent email enumeration
+    res.json({ message: "If an account exists, a reset link has been sent to your email." });
+  } catch (err) {
+    console.error("forgotPassword error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  VALIDATE RESET TOKEN
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export const validateResetToken = async (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).json({ message: "Token is required" });
+
+  try {
+    const tokenResult = await pool.query(
+      "SELECT * FROM password_reset_tokens WHERE token = $1 AND is_active = true AND expires_at > NOW()",
+      [token]
+    );
+
+    if (tokenResult.rows.length === 0) {
+      return res.status(400).json({ valid: false, message: "Invalid or expired reset token" });
+    }
+
+    res.json({ valid: true });
+  } catch (err) {
+    console.error("validateResetToken error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  RESET PASSWORD
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export const resetPassword = async (req, res) => {
+  const { token, newPassword } = req.body;
+  if (!token || !newPassword) {
+    return res.status(400).json({ message: "Token and new password are required" });
+  }
+
+  try {
+    const tokenResult = await pool.query(
+      "SELECT user_id, id FROM password_reset_tokens WHERE token = $1 AND is_active = true AND expires_at > NOW()",
+      [token]
+    );
+
+    if (tokenResult.rows.length === 0) {
+      return res.status(400).json({ message: "Invalid or expired reset token" });
+    }
+
+    const userId = tokenResult.rows[0].user_id;
+    const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+
+    await pool.query("UPDATE users SET password_hash = $1 WHERE user_id = $2", [passwordHash, userId]);
+    
+    // Invalidate the token natively
+    await pool.query("UPDATE password_reset_tokens SET is_active = false WHERE token = $1", [token]);
+    
+    res.json({ message: "Password updated successfully" });
+  } catch (err) {
+    console.error("resetPassword error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };

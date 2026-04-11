@@ -1,7 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Auth from "./pages/Auth";
 import EmployeeLogin from "./pages/EmployeeLogin";
-import Signup from "./pages/Signup";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
+import LandingPage from "./pages/LandingPage";
 import MainLayout from './layout/MainLayout';
 import AdminLayout from './layout/AdminLayout';
 import DashboardPage from './pages/DashboardPage';
@@ -31,11 +33,14 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public Landing Page */}
+        <Route path="/" element={<LandingPage />} />
+
         {/* Auth - Unified Login */}
-        <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Auth />} />
         <Route path="/employee-login" element={<EmployeeLogin />} />
-        <Route path="/signup/:role" element={<Signup />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* Protected Admin Pipeline */}
         <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />

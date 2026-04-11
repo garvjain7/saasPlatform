@@ -129,6 +129,33 @@ export const deleteDataset = async (datasetId) => {
     return response.data;
 };
 
+// ---- Dataset Assignment ----
+export const assignDataset = async (datasetId, userIds) => {
+    const response = await api.post(`/datasets/${datasetId}/assign`, { userIds });
+    return response.data;
+};
+
+export const unassignDataset = async (datasetId, userId) => {
+    const response = await api.delete(`/datasets/${datasetId}/unassign`, { data: { userId } });
+    return response.data;
+};
+
+export const getDatasetAssignments = async (datasetId) => {
+    const response = await api.get(`/datasets/${datasetId}/assignments`);
+    return response.data;
+};
+
+// ---- Password Reset ----
+export const forgotPassword = async (email) => {
+    const response = await api.post('/auth/forgot-password', { email });
+    return response.data;
+};
+
+export const resetPassword = async (token, newPassword) => {
+    const response = await api.post('/auth/reset-password', { token, newPassword });
+    return response.data;
+};
+
 export const getCleanedData = async (datasetId, params = {}) => {
     const response = await api.get(`/cleaned-data/${datasetId}`, { params });
     return response.data;

@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Users, Database, Zap, AlertCircle, TrendingUp, ArrowUpRight, RefreshCw, Loader, BarChart3, Sparkles } from 'lucide-react';
 import AdminLayout from '../../layout/AdminLayout';
-import { getUsers, getDatasets, getUserStats, getQueryVolume, getActivityLogs } from '../../services/api';
+import { getUsers, getDatasets, getUserStats, getQueryVolume, getActivityLogs, getDatasetAssignments } from '../../services/api';
+import AssignUserModal from '../../components/admin/AssignUserModal';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
@@ -38,6 +39,8 @@ export default function AdminDashboard() {
   const [roleFilter, setRoleFilter] = useState('all');
   const [queryChartData, setQueryChartData] = useState([10, 10, 10, 10, 10, 10, 10]);
   const [queryDayLabels, setQueryDayLabels] = useState(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
+  const [assignModal, setAssignModal] = useState(null);
+  const [datasetAssignments, setDatasetAssignments] = useState({});
 
   const role = localStorage.getItem('role');
   if (role !== 'admin') return <Navigate to="/datasets" />;
@@ -79,6 +82,25 @@ export default function AdminDashboard() {
       setLoading(false);
     }
   };
+
+  const fetchAssignments = async (dsId) => {
+    try {
+      const res = await getDatasetAssignments(dsId);
+      if (res.success) {
+        setDatasetAssignments(prev => ({ ...prev, [dsId]: res.users }));
+      }
+    } catch (err) {
+      console.warn(`Failed to fetch assignments for ${dsId}`);
+    }
+  };
+
+  useEffect(() => {
+    if (datasets.length > 0) {
+      datasets.slice(0, 8).forEach(ds => {
+        fetchAssignments(ds.dataset_id || ds.id);
+      });
+    }
+  }, [datasets]);
 
   useEffect(() => {
     fetchData();
@@ -309,7 +331,7 @@ export default function AdminDashboard() {
             </div>
             <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => navigate('/admin/datasets')}>View All →</button>
           </div>
-          <div className="admin-table-wrap">
+          <div className="admin-table-wrap" style={{ background: 'transparent', border: 'none' }}>
             {loading ? (
               <div style={{ padding: '40px', textAlign: 'center' }}>
                 <Loader size={24} style={{ animation: 'spin 1s linear infinite', color: 'var(--primary)' }} />
@@ -319,42 +341,77 @@ export default function AdminDashboard() {
                 No datasets uploaded yet
               </div>
             ) : (
-              <table>
-                <thead>
-                  <tr><th>Dataset</th><th>Uploaded By</th><th>Status</th><th>Size</th><th>Actions</th></tr>
-                </thead>
-                <tbody>
-                  {recentDatasets.map((ds, i) => (
-                    <tr key={ds.id} style={{ animation: `adminSlideIn 0.4s cubic-bezier(0.16,1,0.3,1) ${0.2 + i * 0.05}s both` }}>
-                      <td>
-                        <div className="admin-ds-name">{ds.name}</div>
-                        <div className="admin-ds-meta">{ds.meta}</div>
-                      </td>
-                      <td>
-                        <div className="admin-user-cell">
-                          <div className="admin-u-avatar" style={{ background: ds.uploaderColor, width: 22, height: 22, fontSize: 9 }}>{ds.uploader}</div>
-                          <span style={{ fontSize: '12px' }}>{ds.uploaderName}</span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+                {recentDatasets.map((ds, i) => (
+                  <div key={ds.id} className="glass-panel" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ padding: '16px 20px', flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(88,166,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Database size={16} color="var(--primary)" />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{ds.name}</div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{ds.size}</div>
+                          </div>
                         </div>
-                      </td>
-                      <td>{getStatusBadge(ds.status)}</td>
-                      <td style={{ fontFamily: "'DM Mono', monospace", fontSize: '11px', color: 'var(--text-muted)' }}>{ds.size}</td>
-                      <td>
-                        {ds.status === 'completed' || ds.status === 'ready' ? (
-                          <button className="admin-btn admin-btn-ghost admin-btn-sm" style={{ fontSize: 10, padding: '4px 8px' }}
-                            onClick={() => navigate(`/employee/visualization?ds=${ds.id}&name=${encodeURIComponent(ds.name)}`)}>
-                            <BarChart3 size={10} /> View
+                        {getStatusBadge(ds.status)}
+                      </div>
+                      
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>{ds.meta}</div>
+                      
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Access Management</div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', marginLeft: 4 }}>
+                            {datasetAssignments[ds.id] && datasetAssignments[ds.id].length > 0 ? (
+                              <div style={{ display: 'flex', alignItems: 'center' }}>
+                                {datasetAssignments[ds.id].slice(0, 3).map((user, idx) => (
+                                  <div 
+                                    key={user.user_id} 
+                                    title={user.full_name}
+                                    style={{ 
+                                      width: 24, height: 24, borderRadius: '50%', 
+                                      background: 'var(--primary)', border: '2px solid var(--bg-dark)',
+                                      marginLeft: idx === 0 ? 0 : -8,
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                      fontSize: 9, fontWeight: 700, color: '#fff',
+                                      zIndex: 3 - idx
+                                    }}
+                                  >
+                                    {user.full_name?.charAt(0)}
+                                  </div>
+                                ))}
+                                {datasetAssignments[ds.id].length > 3 && (
+                                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 8 }}>
+                                    +{datasetAssignments[ds.id].length - 3} more
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>No users assigned</span>
+                            )}
+                          </div>
+                          <button 
+                            className="admin-btn admin-btn-ghost admin-btn-sm" 
+                            style={{ fontSize: 10, padding: '4px 8px', border: '1px solid var(--border-color)' }}
+                            onClick={() => setAssignModal(ds)}
+                          >
+                            Assign Users
                           </button>
-                        ) : (
-                          <button className="admin-btn admin-btn-primary admin-btn-sm" style={{ fontSize: 10, padding: '4px 8px' }}
-                            onClick={() => navigate(`/employee/cleaning?ds=${ds.id}&name=${encodeURIComponent(ds.name)}`)}>
-                            <Sparkles size={10} /> Clean
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 16px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: 8 }}>
+                      <button className="admin-btn admin-btn-primary admin-btn-sm" style={{ flex: 1, fontSize: 10, height: 28 }}
+                        onClick={() => navigate(ds.status === 'ready' || ds.status === 'completed' ? `/employee/visualization?ds=${ds.id}&name=${encodeURIComponent(ds.name)}` : `/employee/cleaning?ds=${ds.id}&name=${encodeURIComponent(ds.name)}`)}>
+                        {ds.status === 'ready' || ds.status === 'completed' ? <><BarChart3 size={12} /> View</> : <><Sparkles size={12} /> Clean</>}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -423,6 +480,14 @@ export default function AdminDashboard() {
       <style>{`
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
       `}</style>
+      
+      {assignModal && (
+        <AssignUserModal 
+          dataset={assignModal} 
+          onClose={() => setAssignModal(null)} 
+          onUpdate={() => fetchAssignments(assignModal.id)}
+        />
+      )}
     </AdminLayout>
   );
 }

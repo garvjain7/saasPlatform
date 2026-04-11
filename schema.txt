@@ -40,6 +40,18 @@ CREATE TABLE users (
 );
 
 -- =========================
+-- PASSWORD RESET TOKENS
+-- =========================
+CREATE TABLE password_reset_tokens (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    token TEXT NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- =========================
 -- DATASETS
 -- =========================
 CREATE TABLE datasets (
@@ -305,3 +317,7 @@ UPDATE users SET password_hash = '$2b$12$nI84VP5Se2OxqBfy1mCwye27IhC8DnHbdcmVNlu
 UPDATE users SET password_hash = '$2b$12$AX18reQYaePBZld1.zGbr.R7ckPTPS7/u9wRI3FiM7mf2ZJlj2P1O' WHERE email = 'employee18@explainableai.com';
 UPDATE users SET password_hash = '$2b$12$aSbn1eEd38WiC/KOqkG67.u.wtD6uSWaBw5Vl5NF0c9gbgFaGJmca' WHERE email = 'employee19@explainableai.com';
 UPDATE users SET password_hash = '$2b$12$J.xaTVDEVhOQjBGi68mSvOemk7/v7wfFuwp6GvpryoJPMIfjpHMm2' WHERE email = 'employee20@explainableai.com';
+
+-- Security Hardening for Users
+ALTER TABLE users ADD COLUMN failed_attempts INT DEFAULT 0;
+ALTER TABLE users ADD COLUMN lock_until TIMESTAMP;

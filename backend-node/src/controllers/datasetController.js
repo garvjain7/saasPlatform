@@ -16,7 +16,19 @@ export function mapDatasetRow(row) {
     rows_count: schema.rows_count ?? schema.total_rows ?? null,
     columns_count: schema.columns_count ?? schema.total_columns ?? null,
     version: 1,
+    has_access: row.has_access ?? true, // Default to true if not specified (e.g. for admins)
   };
+}
+
+/** Check if user has access to a dataset */
+async function checkAccess(userId, datasetId, userRole) {
+  if (userRole === 'admin') return true;
+  
+  const result = await pool.query(
+    "SELECT can_view FROM permissions WHERE user_id = $1 AND dataset_id = $2 AND can_view = TRUE",
+    [userId, datasetId]
+  );
+  return result.rows.length > 0;
 }
 
 export const getAllDatasets = async (req, res) => {
@@ -26,24 +38,44 @@ export const getAllDatasets = async (req, res) => {
   }
 
   try {
-    const userResult = await pool.query("SELECT company_id FROM users WHERE email = $1", [userId]);
-    if (userResult.rows.length === 0) {
-      return res.status(401).json({ success: false, message: "User not found" });
+    const userRes = await pool.query("SELECT user_id, role, company_id FROM users WHERE email = $1", [userId]);
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+    
+    const user = userRes.rows[0];
+    const companyId = user.company_id;
+    const isEmployee = user.role === 'employee';
+
+    let query = `
+      SELECT d.*, u.full_name AS uploaded_by_name, u.email AS uploaded_by_email
+    `;
+    const params = [companyId];
+
+    if (isEmployee) {
+      query += `, CASE WHEN p.can_view = TRUE THEN TRUE ELSE FALSE END AS has_access `;
+      query += ` FROM datasets d
+                 LEFT JOIN users u ON d.uploaded_by = u.user_id
+                 LEFT JOIN permissions p ON d.dataset_id = p.dataset_id AND p.user_id = $2
+                 WHERE d.company_id = $1 `;
+      params.push(user.user_id);
+    } else {
+      query += ` FROM datasets d
+                 LEFT JOIN users u ON d.uploaded_by = u.user_id
+                 WHERE d.company_id = $1 `;
     }
 
-    const companyId = userResult.rows[0].company_id;
-    const result = await pool.query(
-      `SELECT d.*, u.full_name AS uploaded_by_name, u.email AS uploaded_by_email
-       FROM datasets d
-       LEFT JOIN users u ON d.uploaded_by = u.user_id
-       WHERE d.company_id = $1
-       ORDER BY d.created_at DESC`,
-      [companyId]
-    );
+    query += ` ORDER BY d.created_at DESC `;
+
+    const result = await pool.query(query, params);
+    
     return res.json({
       success: true,
       count: result.rows.length,
-      data: result.rows.map(mapDatasetRow),
+      data: result.rows.map(row => mapDatasetRow({
+        ...row,
+        has_access: isEmployee ? row.has_access : true
+      })),
     });
   } catch (err) {
     console.error("getAllDatasets error:", err);
@@ -81,7 +113,17 @@ export const getDatasetById = async (req, res) => {
       [req.params.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: "Dataset not found" });
-    return res.json({ success: true, data: mapDatasetRow(result.rows[0]) });
+    
+    // Check access
+    const userRole = req.user?.role;
+    const userId = (await pool.query("SELECT user_id FROM users WHERE email = $1", [req.user?.email])).rows[0]?.user_id;
+    
+    const hasAccess = await checkAccess(userId, req.params.id, userRole);
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, message: "Unauthorized: Access restricted by administrator" });
+    }
+
+    return res.json({ success: true, data: mapDatasetRow({ ...result.rows[0], has_access: true }) });
   } catch (err) {
     console.error("getDatasetById error:", err);
     return res.status(500).json({ message: "Server error" });
@@ -102,6 +144,13 @@ export const getDatasetStatus = async (req, res) => {
     }
 
     const dbStatus = dataset.rows[0].upload_status;
+    const userRole = req.user?.role;
+    const dbUserIdResult = await pool.query("SELECT user_id FROM users WHERE email = $1", [userId]);
+    const dbUserId = dbUserIdResult.rows[0]?.user_id;
+
+    if (!await checkAccess(dbUserId, datasetId, userRole)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
 
     // If DB has status, use it - but also verify with file-based check for completed
     if (dbStatus === "completed") {
@@ -151,6 +200,72 @@ export const getDatasetStatus = async (req, res) => {
   }
 };
 
+export const assignDataset = async (req, res) => {
+  const datasetId = req.params.id;
+  const { userIds } = req.body; // Array of UUIDs
+  const adminEmail = req.user?.email;
+
+  if (!Array.isArray(userIds) || userIds.length === 0) {
+    return res.status(400).json({ success: false, message: "userIds array is required" });
+  }
+
+  try {
+    const adminResult = await pool.query("SELECT user_id, company_id FROM users WHERE email = $1", [adminEmail]);
+    const admin = adminResult.rows[0];
+
+    // Bulk assign
+    for (const uid of userIds) {
+      await pool.query(
+        `INSERT INTO permissions (company_id, user_id, dataset_id, can_view, granted_by)
+         VALUES ($1, $2, $3, TRUE, $4)
+         ON CONFLICT (user_id, dataset_id) 
+         DO UPDATE SET can_view = TRUE, updated_at = NOW()`,
+        [admin.company_id, uid, datasetId, admin.user_id]
+      );
+    }
+
+    res.json({ success: true, message: `Successfully assigned ${userIds.length} users` });
+  } catch (err) {
+    console.error("assignDataset error:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+export const unassignDataset = async (req, res) => {
+  const datasetId = req.params.id;
+  const { userId } = req.body;
+
+  if (!userId) return res.status(400).json({ success: false, message: "userId is required" });
+
+  try {
+    await pool.query(
+      "DELETE FROM permissions WHERE user_id = $1 AND dataset_id = $2",
+      [userId, datasetId]
+    );
+    res.json({ success: true, message: "User unassigned successfully" });
+  } catch (err) {
+    console.error("unassignDataset error:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+export const getDatasetAssignments = async (req, res) => {
+  const datasetId = req.params.id;
+  try {
+    const result = await pool.query(
+      `SELECT u.user_id, u.full_name, u.email, u.department, u.designation 
+       FROM users u
+       JOIN permissions p ON u.user_id = p.user_id
+       WHERE p.dataset_id = $1 AND p.can_view = TRUE`,
+      [datasetId]
+    );
+    res.json({ success: true, users: result.rows });
+  } catch (err) {
+    console.error("getDatasetAssignments error:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
 export const updateDatasetStatus = async (req, res) => {
   const { status } = req.body;
   const allowedStatus = ["uploaded", "processing", "completed", "failed", "ready", "trained"];
@@ -160,6 +275,14 @@ export const updateDatasetStatus = async (req, res) => {
   }
 
   try {
+    const userRole = req.user?.role;
+    const userEmail = req.user?.email;
+    const dbUserId = (await pool.query("SELECT user_id FROM users WHERE email = $1", [userEmail])).rows[0]?.user_id;
+
+    if (!await checkAccess(dbUserId, req.params.id, userRole)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
     const uploadStatus = status === "trained" ? "completed" : status;
     const result = await pool.query(
       "UPDATE datasets SET upload_status = $1, updated_at = NOW() WHERE dataset_id = $2 RETURNING *",
@@ -192,6 +315,12 @@ export const getAnalysis = async (req, res) => {
   const userId = req.user?.email;
   if (!userId) {
     return res.status(401).json({ success: false, message: "Authentication required" });
+  }
+  
+  const userRole = req.user?.role;
+  const dbUserId = (await pool.query("SELECT user_id FROM users WHERE email = $1", [userId])).rows[0]?.user_id;
+  if (!await checkAccess(dbUserId, datasetId, userRole)) {
+    return res.status(403).json({ success: false, message: "Access denied" });
   }
   
   // Try multiple paths to find the dataset files
@@ -337,6 +466,13 @@ export const getMetrics = async (req, res) => {
   if (!userId) {
     return res.status(401).json({ success: false, message: "Authentication required" });
   }
+
+  const userRole = req.user?.role;
+  const dbUserId = (await pool.query("SELECT user_id FROM users WHERE email = $1", [userId])).rows[0]?.user_id;
+  if (!await checkAccess(dbUserId, datasetId, userRole)) {
+    return res.status(403).json({ success: false, message: "Access denied" });
+  }
+
   const metricsPath = path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, datasetId, "metrics.json");
   
   try {
@@ -350,6 +486,12 @@ export const getMetrics = async (req, res) => {
 export const getDashboardConfig = async (req, res) => {
   const datasetId = req.params.id;
   const userId = req.user?.email || "tharunmellacheruvu@gmail.com";
+  const userRole = req.user?.role;
+
+  const dbUserId = (await pool.query("SELECT user_id FROM users WHERE email = $1", [userId])).rows[0]?.user_id;
+  if (dbUserId && !await checkAccess(dbUserId, datasetId, userRole)) {
+    return res.status(403).json({ success: false, message: "Access denied" });
+  }
   
   // Try multiple paths to find the dataset files
   const possiblePaths = [

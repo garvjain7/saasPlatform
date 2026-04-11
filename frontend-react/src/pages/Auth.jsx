@@ -205,8 +205,7 @@ export default function Auth() {
                 </div>
 
                 <div className="auth-footer">
-                    Don&apos;t have an account?{" "}
-                    <Link to="/signup/employee">Create one</Link>
+                    <Link to="/forgot-password">Forgot Password?</Link>
                 </div>
             </div>
 
