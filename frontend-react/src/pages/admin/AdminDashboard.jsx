@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Users, Database, Zap, AlertCircle, TrendingUp, ArrowUpRight, RefreshCw, Loader, BarChart3, Sparkles } from 'lucide-react';
 import AdminLayout from '../../layout/AdminLayout';
-import { getUsers, getDatasets, getUserStats, getQueryVolume } from '../../services/api';
+import { getUsers, getDatasets, getUserStats, getQueryVolume, getActivityLogs } from '../../services/api';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
@@ -32,6 +32,7 @@ export default function AdminDashboard() {
   const [animatedBars, setAnimatedBars] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [datasets, setDatasets] = useState([]);
+  const [activityLogs, setActivityLogs] = useState([]);
   const [stats, setStats] = useState({ total: 0, active: 0, byRole: { admin: 0, employee: 0, viewer: 0 } });
   const [loading, setLoading] = useState(true);
   const [roleFilter, setRoleFilter] = useState('all');
@@ -54,15 +55,17 @@ export default function AdminDashboard() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [usersRes, datasetsRes, statsRes, volRes] = await Promise.all([
+      const [usersRes, datasetsRes, statsRes, volRes, logsRes] = await Promise.all([
         getUsers(roleFilter),
         getDatasets(),
         getUserStats(),
         getQueryVolume(7).catch(() => ({ success: false })),
+        getActivityLogs({ includeSessions: 'true' }).catch(() => ({ success: false }))
       ]);
 
       setEmployees(usersRes.users || []);
       setDatasets(datasetsRes.data || []);
+      setActivityLogs(logsRes?.logs || []);
       setStats(statsRes.stats || { total: 0, active: 0, byRole: { admin: 0, employee: 0, viewer: 0 } });
       if (volRes?.success && Array.isArray(volRes.normalized) && volRes.normalized.length > 0) {
         setQueryChartData(volRes.normalized);
@@ -143,7 +146,7 @@ export default function AdminDashboard() {
   const processingDatasets = datasets.filter(d => d.status === 'processing').length;
 
   return (
-    <AdminLayout title="Dashboard" subtitle="Company overview and management">
+    <AdminLayout title="Dashboard" subtitle={`Welcome, ${localStorage.getItem('userName') || 'Admin'}`}>
       {/* Stat Cards */}
       <div className="admin-stat-grid">
         <div className="admin-stat-card accent">
@@ -186,19 +189,13 @@ export default function AdminDashboard() {
         <div>
           <div className="admin-section-header">
             <div>
-              <div className="admin-section-title">Users</div>
+              <div className="admin-section-title">Employees</div>
               <div className="admin-section-sub">{stats.total} total · {stats.active || stats.total} active</div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={fetchData} disabled={loading}>
-                <RefreshCw size={12} /> Refresh
+              <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => navigate('/admin/employees')}>
+                View All →
               </button>
-              <select className="admin-filter-select" value={roleFilter} onChange={e => setRoleFilter(e.target.value)} style={{ fontSize: 11 }}>
-                <option value="all">All Roles</option>
-                <option value="employee">Employee</option>
-                <option value="admin">Admin</option>
-                <option value="viewer">Viewer</option>
-              </select>
             </div>
           </div>
           <div className="admin-table-wrap">
@@ -230,13 +227,13 @@ export default function AdminDashboard() {
                     </td>
                   </tr>
                 ) : (
-                  employees.map((emp, i) => (
+                  employees.slice(0, 5).map((emp, i) => (
                     <tr key={emp.email} style={{ animation: `adminSlideIn 0.4s cubic-bezier(0.16,1,0.3,1) ${0.1 + i * 0.05}s both` }}>
                       <td>
                         <div className="admin-user-cell">
-                          <div className="admin-u-avatar" style={{ background: emp.color || '#58a6ff' }}>{emp.initials || emp.name?.charAt(0).toUpperCase() || '??'}</div>
+                          <div className="admin-u-avatar" style={{ background: emp.color || '#58a6ff' }}>{emp.initials || emp.full_name?.charAt(0).toUpperCase() || '??'}</div>
                           <div>
-                            <div className="admin-u-name">{emp.name || 'Unknown'}</div>
+                            <div className="admin-u-name">{emp.full_name || 'Unknown'}</div>
                             <div className="admin-u-email">{emp.email}</div>
                           </div>
                         </div>
@@ -253,7 +250,7 @@ export default function AdminDashboard() {
                         </select>
                       </td>
                       <td style={{ fontFamily: "'DM Mono', monospace", fontSize: '12px' }}>{emp.datasets || 0}</td>
-                      <td>{getStatusBadge(emp.status || 'active')}</td>
+                      <td>{getStatusBadge(emp.is_active ? 'active' : 'inactive')}</td>
                       <td><button className="admin-btn admin-btn-ghost admin-btn-sm">⋯</button></td>
                     </tr>
                   ))
@@ -267,33 +264,33 @@ export default function AdminDashboard() {
         <div>
           <div className="admin-section-header">
             <div>
-              <div className="admin-section-title">Dataset Activity</div>
-              <div className="admin-section-sub">{datasets.length} total datasets</div>
+              <div className="admin-section-title">Recent Activity</div>
+              <div className="admin-section-sub">Last 24 hours</div>
             </div>
             <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => navigate('/admin/logs')}>All Logs →</button>
           </div>
           <div className="admin-table-wrap">
             <div className="admin-activity-list">
-              {datasets.slice(0, 6).map((ds, i) => {
-                const statusColor = ds.status === 'completed' || ds.status === 'ready' ? '#3fb950' : 
-                                    ds.status === 'processing' ? '#d29922' : '#f85149';
+              {activityLogs.slice(0, 5).map((log, i) => {
+                const statusColor = log.status === 'ok' ? '#3fb950' : 
+                                    log.status === 'pending' ? '#d29922' : '#f85149';
                 return (
                   <div
-                    key={ds.dataset_id || ds.id}
+                    key={log.log_id || i}
                     className="admin-activity-item"
                     style={{ animation: `adminSlideIn 0.4s cubic-bezier(0.16,1,0.3,1) ${0.15 + i * 0.06}s both` }}
                   >
                     <div className="admin-act-dot" style={{ background: statusColor }} />
                     <div className="admin-act-text">
-                      <strong>{ds.name || 'Dataset'}</strong> - {ds.status || 'ready'}
+                      <strong>{log.user_name || 'System'}</strong> {log.detail || log.event_description || log.event_type}
                     </div>
-                    <div className="admin-act-time">{formatDate(ds.created_at)}</div>
+                    <div className="admin-act-time">{formatDate(log.created_at)}</div>
                   </div>
                 );
               })}
-              {datasets.length === 0 && (
+              {activityLogs.length === 0 && (
                 <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                  No dataset activity yet
+                  No activity logs yet
                 </div>
               )}
             </div>

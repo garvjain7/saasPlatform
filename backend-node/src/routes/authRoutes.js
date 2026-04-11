@@ -23,7 +23,7 @@ router.post("/logout", protect, async (req, res) => {
 
 // Auth
 router.post("/login", login);
-router.post("/signup", protect, isAdmin, signup);
+router.post("/signup", signup);
 router.get("/me", protect, getMe);
 
 // User management (admin)

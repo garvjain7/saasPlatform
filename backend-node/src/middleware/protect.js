@@ -20,9 +20,9 @@ export const protect = async (req, res, next) => {
     }
 
     const u = userResult.rows[0];
-    
+
     if (!u.is_active) {
-       return res.status(401).json({ message: "Not authorized, account is inactive" });
+      return res.status(401).json({ message: "Not authorized, account is inactive" });
     }
 
     req.user = {
@@ -32,7 +32,7 @@ export const protect = async (req, res, next) => {
       role: decoded.role || "employee",
       company_id: u.company_id,
     };
-    
+
     next();
   } catch (err) {
     console.error("Protect middleware error:", err.message);

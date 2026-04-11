@@ -1,24 +1,24 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   LayoutDashboard, FileText, Shield, Users, Database,
   Settings, LogOut, Search, Bell, Activity,
   Menu, X
 } from 'lucide-react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { getPendingUsers } from '../services/api';
 
 const navItems = [
   {
     label: 'Main', items: [
       { path: '/admin', icon: LayoutDashboard, text: 'Dashboard' },
-      { path: '/admin/permissions', icon: Shield, text: 'Permissions', badge: 3 },
+      { path: '/admin/permissions', icon: Shield, text: 'Permissions', badgeKey: 'pending' },
       { path: '/admin/logs', icon: FileText, text: 'Logs' },
     ]
   },
   {
     label: 'Manage', items: [
-      { path: '/admin', icon: Users, text: 'Employees' },
+      { path: '/admin/employees', icon: Users, text: 'Employees' },
       { path: '/datasets', icon: Database, text: 'Datasets' },
-      { path: '/admin/permissions', icon: Shield, text: 'Permissions' },
     ]
   },
   {
@@ -32,14 +32,28 @@ export default function AdminLayout({ children, title, subtitle }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  
   const email = localStorage.getItem('email') || 'admin@datainsights.ai';
-  const initials = email.slice(0, 2).toUpperCase();
+  // Use userName from local storage if available
+  const adminName = localStorage.getItem('userName') || email.split('@')[0];
+  const initials = adminName.slice(0, 2).toUpperCase();
+
+  useEffect(() => {
+    // Fetch pending count
+    getPendingUsers().then(res => {
+        if (res && typeof res.count === 'number') {
+            setPendingCount(res.count);
+        }
+    }).catch(err => console.warn('Failed to get pending users', err));
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('role');
     localStorage.removeItem('email');
-    navigate('/');
+    localStorage.removeItem('userName');
+    navigate('/login');
   };
 
   return (
@@ -55,7 +69,7 @@ export default function AdminLayout({ children, title, subtitle }) {
       {/* Sidebar */}
       <aside className={`admin-sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
         <div className="admin-sidebar-logo">
-          <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Link to="/admin" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Activity color="var(--primary)" size={20} />
             <div>
               <div className="admin-logo-text">Data<span className="gradient-text">Insights</span></div>
@@ -79,15 +93,18 @@ export default function AdminLayout({ children, title, subtitle }) {
               {section.items.map((item, ii) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
+                let badgeVal = item.badgeKey === 'pending' ? pendingCount : item.badge;
+
                 return (
                   <a
                     key={ii}
                     onClick={() => { navigate(item.path); setMobileOpen(false); }}
                     className={`admin-nav-item ${isActive ? 'active' : ''}`}
+                    style={{ cursor: 'pointer' }}
                   >
                     <Icon size={16} className="admin-nav-icon" />
                     <span>{item.text}</span>
-                    {item.badge && <span className="admin-nav-badge">{item.badge}</span>}
+                    {badgeVal ? <span className="admin-nav-badge">{badgeVal}</span> : null}
                   </a>
                 );
               })}
@@ -100,10 +117,10 @@ export default function AdminLayout({ children, title, subtitle }) {
           <div className="admin-user-card">
             <div className="admin-user-avatar">{initials}</div>
             <div>
-              <div className="admin-user-name">{email.split('@')[0]}</div>
+              <div className="admin-user-name">{adminName}</div>
               <div className="admin-user-email">{email}</div>
             </div>
-            <LogOut size={14} className="admin-logout-btn" onClick={handleLogout} />
+            <LogOut size={14} className="admin-logout-btn" onClick={handleLogout} style={{ cursor: 'pointer' }} />
           </div>
         </div>
       </aside>
@@ -121,10 +138,9 @@ export default function AdminLayout({ children, title, subtitle }) {
             </div>
           </div>
           <div className="admin-topbar-actions">
-            <div className="admin-search-bar">
-              <Search size={14} />
-              <input type="text" placeholder="Search employees, datasets..." />
-            </div>
+             {/* Note: Global Search input is pushed to employees page layout context if desired, or can be kept here. */}
+             {/* For now, removing the dummy search since dedicated search is requested in the UI. */}
+             {/* Or just keep the icon without functionality unless needed globally. */}
             <button className="admin-icon-btn">
               <Bell size={16} />
               <span className="admin-notif-dot" />

@@ -24,9 +24,18 @@ const UserIcon = () => (
     </svg>
 );
 
-const PhoneIcon = () => (
+const BuildingIcon = () => (
     <svg className="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+        <rect x="4" y="2" width="16" height="20" rx="2" ry="2" />
+        <path d="M9 22v-4h6v4" />
+        <path d="M8 6h.01M16 6h.01M12 6h.01M12 10h.01M16 10h.01M8 10h.01M8 14h.01M12 14h.01M16 14h.01" />
+    </svg>
+);
+
+const BriefcaseIcon = () => (
+    <svg className="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
     </svg>
 );
 
@@ -91,11 +100,13 @@ const CheckIcon = () => (
 export default function Signup() {
     const { role } = useParams();
     const nav = useNavigate();
-    const [firstName, setFirstName] = useState("");
-    const [lastName, setLastName] = useState("");
-    const [phone, setPhone] = useState("");
+    const [fullName, setFullName] = useState("");
+    const [companyName, setCompanyName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [retypePassword, setRetypePassword] = useState("");
+    const [department, setDepartment] = useState("");
+    const [designation, setDesignation] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
@@ -119,8 +130,8 @@ export default function Signup() {
     })();
 
     const signup = async () => {
-        if (!firstName.trim() || !lastName.trim()) {
-            setError("First name and last name are required");
+        if (!fullName.trim() || !companyName.trim()) {
+            setError("Full Name and Company Name are required");
             return;
         }
         if (!email) {
@@ -131,8 +142,8 @@ export default function Signup() {
             setError("Password must be at least 6 characters");
             return;
         }
-        if (phone && !/^\+?[\d\s-]{7,15}$/.test(phone)) {
-            setError("Please enter a valid phone number");
+        if (password !== retypePassword) {
+            setError("Passwords do not match");
             return;
         }
 
@@ -140,27 +151,22 @@ export default function Signup() {
         setLoading(true);
         try {
             const res = await axios.post("http://localhost:5000/api/auth/signup", {
-                firstName: firstName.trim(),
-                lastName: lastName.trim(),
-                phone: phone.trim() || undefined,
+                fullName: fullName.trim(),
+                companyName: companyName.trim(),
                 email,
                 password,
                 role: isAdmin ? "admin" : "employee",
+                department: department.trim() || undefined,
+                designation: designation.trim() || undefined,
             });
 
-            if (res.data.role === "admin") {
-                localStorage.setItem("token", res.data.token);
-                localStorage.setItem("role", res.data.role);
-                localStorage.setItem("userName", res.data.name || `${firstName} ${lastName}`);
-                nav("/admin");
-            } else {
-                nav("/login", { 
-                    state: { 
-                        pendingApproval: true, 
-                        message: "Your account has been created but requires admin approval. You will be notified once your account is activated." 
-                    } 
-                });
-            }
+            nav(loginPath, { 
+                state: { 
+                    pendingApproval: true, 
+                    message: res.data.message || "Account created successfully. Please wait for activation." 
+                } 
+            });
+            
         } catch (err) {
             setError(err.response?.data?.message || "Signup failed. Please try again.");
             setLoading(false);
@@ -177,7 +183,7 @@ export default function Signup() {
             <div className="orb-2" />
             <div className="orb-3" />
 
-            <div className="auth-card">
+            <div className="auth-card" style={{ maxWidth: '500px' }}>
                 <Link to="/" className="auth-back-link">
                     <ArrowLeftIcon /> Back to role selection
                 </Link>
@@ -204,71 +210,88 @@ export default function Signup() {
                         </div>
                     )}
 
-                    {/* Name Row */}
+                    {/* Full Name */}
+                    <div className="auth-field">
+                        <UserIcon />
+                        <input
+                            type="text"
+                            placeholder="Full Name"
+                            value={fullName}
+                            onChange={e => setFullName(e.target.value)}
+                        />
+                    </div>
+
+                    {/* Company & Email Row */}
                     <div style={{ display: "flex", gap: "10px" }}>
                         <div className="auth-field" style={{ flex: 1 }}>
-                            <UserIcon />
+                            <BuildingIcon />
                             <input
                                 type="text"
-                                placeholder="First Name"
-                                value={firstName}
-                                onChange={e => setFirstName(e.target.value)}
-                                autoComplete="given-name"
+                                placeholder="Company Name"
+                                value={companyName}
+                                onChange={e => setCompanyName(e.target.value)}
                             />
                         </div>
                         <div className="auth-field" style={{ flex: 1 }}>
-                            <UserIcon />
+                            <MailIcon />
                             <input
-                                type="text"
-                                placeholder="Last Name"
-                                value={lastName}
-                                onChange={e => setLastName(e.target.value)}
-                                autoComplete="family-name"
+                                type="email"
+                                placeholder="Company Email"
+                                value={email}
+                                onChange={e => setEmail(e.target.value)}
                             />
                         </div>
                     </div>
 
-                    {/* Phone */}
-                    <div className="auth-field">
-                        <PhoneIcon />
-                        <input
-                            type="tel"
-                            placeholder="Phone Number (optional)"
-                            value={phone}
-                            onChange={e => setPhone(e.target.value)}
-                            autoComplete="tel"
-                        />
+                    {/* Dept & Designation Row */}
+                    <div style={{ display: "flex", gap: "10px" }}>
+                        <div className="auth-field" style={{ flex: 1 }}>
+                            <BriefcaseIcon />
+                            <input
+                                type="text"
+                                placeholder="Department (Opt)"
+                                value={department}
+                                onChange={e => setDepartment(e.target.value)}
+                            />
+                        </div>
+                        <div className="auth-field" style={{ flex: 1 }}>
+                            <BriefcaseIcon />
+                            <input
+                                type="text"
+                                placeholder="Designation (Opt)"
+                                value={designation}
+                                onChange={e => setDesignation(e.target.value)}
+                            />
+                        </div>
                     </div>
 
-                    {/* Email */}
-                    <div className="auth-field">
-                        <MailIcon />
-                        <input
-                            type="email"
-                            placeholder="you@company.com"
-                            value={email}
-                            onChange={e => setEmail(e.target.value)}
-                            autoComplete="email"
-                        />
-                    </div>
-
-                    {/* Password */}
-                    <div className="auth-field">
-                        <LockIcon />
-                        <input
-                            type={showPassword ? "text" : "password"}
-                            placeholder="Create a password (min 6 chars)"
-                            value={password}
-                            onChange={e => setPassword(e.target.value)}
-                            autoComplete="new-password"
-                        />
-                        <button
-                            type="button"
-                            className="password-toggle"
-                            onClick={() => setShowPassword(!showPassword)}
-                        >
-                            <EyeIcon off={showPassword} />
-                        </button>
+                    {/* Passwords */}
+                    <div style={{ display: "flex", gap: "10px" }}>
+                        <div className="auth-field" style={{ flex: 1 }}>
+                            <LockIcon />
+                            <input
+                                type={showPassword ? "text" : "password"}
+                                placeholder="Password"
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                            />
+                            <button
+                                type="button"
+                                className="password-toggle"
+                                onClick={() => setShowPassword(!showPassword)}
+                            >
+                                <EyeIcon off={showPassword} />
+                            </button>
+                        </div>
+                        <div className="auth-field" style={{ flex: 1 }}>
+                            <LockIcon />
+                            <input
+                                type={showPassword ? "text" : "password"}
+                                placeholder="Retype Password"
+                                value={retypePassword}
+                                onChange={e => setRetypePassword(e.target.value)}
+                            />
+                        </div>
                     </div>
 
                     {/* Password Strength Indicator */}
@@ -291,12 +314,6 @@ export default function Signup() {
                                 <div style={{ display: "flex", gap: "8px", color: "rgba(139,148,158,0.6)" }}>
                                     <span style={{ color: password.length >= 6 ? "#3fb950" : undefined }}>
                                         {password.length >= 6 && <CheckIcon />} 6+ chars
-                                    </span>
-                                    <span style={{ color: /[A-Z]/.test(password) ? "#3fb950" : undefined }}>
-                                        {/[A-Z]/.test(password) && <CheckIcon />} Uppercase
-                                    </span>
-                                    <span style={{ color: /[0-9]/.test(password) ? "#3fb950" : undefined }}>
-                                        {/[0-9]/.test(password) && <CheckIcon />} Number
                                     </span>
                                 </div>
                             </div>

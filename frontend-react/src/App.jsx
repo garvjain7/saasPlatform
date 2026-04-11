@@ -15,6 +15,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import LogsPage from './pages/admin/LogsPage';
 import PermissionPage from './pages/admin/PermissionPage';
+import EmployeesPage from './pages/admin/EmployeesPage';
 
 // Employee section pages
 import EmployeeDatasetsPage from './pages/employee/EmployeeDatasetsPage';
@@ -31,14 +32,16 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         {/* Auth - Unified Login */}
-        <Route path="/" element={<Auth />} />
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/login" element={<Auth />} />
         <Route path="/employee-login" element={<EmployeeLogin />} />
         <Route path="/signup/:role" element={<Signup />} />
 
         {/* Protected Admin Pipeline */}
-        <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminLayout><AdminDashboard /></AdminLayout></ProtectedRoute>} />
-        <Route path="/admin/logs" element={<ProtectedRoute allowedRoles={['admin']}><AdminLayout><LogsPage /></AdminLayout></ProtectedRoute>} />
-        <Route path="/admin/permissions" element={<ProtectedRoute allowedRoles={['admin']}><AdminLayout><PermissionPage /></AdminLayout></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
+        <Route path="/admin/logs" element={<ProtectedRoute allowedRoles={['admin']}><LogsPage /></ProtectedRoute>} />
+        <Route path="/admin/permissions" element={<ProtectedRoute allowedRoles={['admin']}><PermissionPage /></ProtectedRoute>} />
+        <Route path="/admin/employees" element={<ProtectedRoute allowedRoles={['admin']}><EmployeesPage /></ProtectedRoute>} />
 
         {/* Data Pipeline (wrapped in MainLayout) */}
         <Route path="/upload" element={<ProtectedRoute><MainLayout><UploadPage /></MainLayout></ProtectedRoute>} />

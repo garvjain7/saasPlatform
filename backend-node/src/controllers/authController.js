@@ -29,11 +29,12 @@ function hashCode(str) {
 //  companyId must be provided (from admin's JWT)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 export const signup = async (req, res) => {
-  const { email, password, role, fullName, companyId, department, designation } = req.body;
+  const { fullName, companyName, email, password, role, department, designation } = req.body;
 
+  if (!fullName) return res.status(400).json({ message: "Full Name is required" });
+  if (!companyName) return res.status(400).json({ message: "Company Name is required" });
   if (!email) return res.status(400).json({ message: "Email is required" });
   if (!password || password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
-  if (!companyId) return res.status(400).json({ message: "companyId is required" });
 
   try {
     // Check if user already exists
@@ -42,16 +43,24 @@ export const signup = async (req, res) => {
       return res.status(409).json({ message: "A user with this email already exists" });
     }
 
-    // Validate companyId exists
-    const company = await pool.query("SELECT company_id FROM companies WHERE company_id = $1", [companyId]);
-    if (company.rows.length === 0) {
-      return res.status(400).json({ message: "Invalid companyId — company not found" });
+    // Validate company exists by name
+    const companyResult = await pool.query("SELECT company_id FROM companies WHERE company_name = $1", [companyName]);
+    if (companyResult.rows.length === 0) {
+      return res.status(400).json({ message: "Company does not exist in our records." });
     }
+    const companyId = companyResult.rows[0].company_id;
 
-    const resolvedName = fullName?.trim() || email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    // Check if there are any existing admins for this company
+    const adminResult = await pool.query("SELECT * FROM users WHERE company_id = $1 AND role = 'admin'", [companyId]);
+    
+    const resolvedName = fullName.trim();
     const resolvedRole = role || "employee";
-    // Admins are active immediately; employees start inactive (pending admin approval)
-    const isActive = resolvedRole === "admin";
+    
+    // Auto-activate ONLY if this is the very first admin for this company. Otherwise, inactive by default.
+    let isActive = false;
+    if (resolvedRole === "admin" && adminResult.rows.length === 0) {
+       isActive = true;
+    }
 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
@@ -62,20 +71,17 @@ export const signup = async (req, res) => {
       [companyId, resolvedName, email, passwordHash, resolvedRole, department || null, designation || null, isActive]
     );
 
-    const token = jwt.sign(
-      { email, role: resolvedRole, userId: newUser.rows[0].user_id, companyId },
-      process.env.JWT_SECRET || "secret",
-      { expiresIn: "1d" }
+    const userId = newUser.rows[0].user_id;
+
+    // Log the signup into activity_logs
+    await pool.query(
+      `INSERT INTO activity_logs (company_id, user_id, activity_type, activity_description, module_name, status, timestamp)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+      [companyId, userId, "SIGNUP", `New user ${resolvedName} signed up as ${resolvedRole}. ${!isActive ? 'Activation requested.' : 'Auto-activated.'}`, "AUTH", "ok"]
     );
 
     res.json({
-      token,
-      role: resolvedRole,
-      name: resolvedName,
-      email,
-      userId: newUser.rows[0].user_id,
-      companyId,
-      message: "Account created successfully",
+      message: isActive ? "Admin account created and auto-activated successfully." : "Account created successfully. Pending admin approval."
     });
   } catch (err) {
     console.error("Signup error:", err);
@@ -115,13 +121,10 @@ export const login = async (req, res) => {
 
     // Check active status
     if (!user.is_active) {
-      if (user.role !== "admin") {
-        return res.status(403).json({
-          message: "Account pending approval. Please contact your administrator to activate your account.",
-          pending: true,
-        });
-      }
-      return res.status(403).json({ message: "Account is deactivated. Contact your administrator." });
+      return res.status(403).json({
+        message: "Account is pending approval or inactive. Please contact an administrator.",
+        pending: true,
+      });
     }
 
     // If admin login requested but user is not admin
