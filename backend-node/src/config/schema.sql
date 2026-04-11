@@ -16,14 +16,18 @@ CREATE TABLE companies (
 CREATE TABLE users (
     user_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     company_id UUID NOT NULL REFERENCES companies(company_id) ON DELETE CASCADE,
-    name TEXT,
+    full_name TEXT,
     first_name TEXT,
     last_name TEXT,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT,
     phone TEXT,
     address TEXT,
+    role TEXT DEFAULT 'employee',
+    department TEXT,
+    designation TEXT,
     is_active BOOLEAN DEFAULT TRUE,
+    last_login TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW()
 );
 

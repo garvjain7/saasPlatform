@@ -32,6 +32,7 @@ const EmployeeCleaningPage = () => {
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [showFullCleaned, setShowFullCleaned] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [stepPopup, setStepPopup] = useState({ open: false, message: '' });
   
   const [tableRows, setTableRows] = useState([]);
   const [cleanedRows, setCleanedRows] = useState([]);
@@ -62,10 +63,20 @@ const EmployeeCleaningPage = () => {
       if (!dsId) { setLoading(false); return; }
       try {
         const token = localStorage.getItem('token');
-        const res = await fetch(`${API_URL}/cleaned-data/${dsId}`, {
+        // Fetch original/raw data for cleaning (so users can apply all 5 steps)
+        let res = await fetch(`${API_URL}/original-data/${dsId}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
-        const data = await res.json();
+        let data = await res.json();
+        
+        // Fallback to cleaned data if original not available
+        if (!data.success || !data.rows?.length) {
+          res = await fetch(`${API_URL}/cleaned-data/${dsId}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          data = await res.json();
+        }
+        
         if (data.success && data.rows?.length > 0) {
           setTableRows(data.rows);
           setCleanedRows(data.rows);
@@ -269,12 +280,55 @@ const EmployeeCleaningPage = () => {
     setCleanedRows(data);
   }, [settings, tableRows, tableHeaders, featStatuses, aiSuggestions]);
 
+  const canProceedToStep = (targetStep) => {
+    // Always allow going back or staying on current step
+    if (targetStep <= currentStep) return true;
+    
+    // Check if trying to skip steps without completing earlier ones
+    if (targetStep > currentStep + 1) {
+      setStepPopup({ open: true, message: `You cannot skip multiple steps. Please complete Step ${currentStep} (${STEPS[currentStep - 1].name}) first, then you can proceed to Step ${targetStep} (${STEPS[targetStep - 1].name}).` });
+      return false;
+    }
+    
+    // Check if current step has unresolved issues
+    // Step 1: Null Values - warn if there are nulls and user hasn't configured any strategy
+    if (currentStep === 1 && totNulls > 0) {
+      const hasFilledStrategy = Object.values(settings[1] || {}).some(s => s && s !== 'Keep as-is');
+      if (!hasFilledStrategy) {
+        setStepPopup({ open: true, message: `You have ${totNulls} null values in your dataset. Please configure how to handle them in Step 1 (Null Values) before proceeding to the next step.` });
+        return false;
+      }
+    }
+    
+    // Step 2: Duplicates - warn if there are dupes and user hasn't configured strategy
+    if (currentStep === 2 && totDupes > 0) {
+      const strategy = settings[2]?.strategy;
+      if (!strategy || strategy === 'Keep as-is') {
+        setStepPopup({ open: true, message: `You have ${totDupes} duplicate rows in your dataset. Please configure how to handle them in Step 2 (Duplicates) before proceeding to the next step.` });
+        return false;
+      }
+    }
+    
+    return true;
+  };
+
+  const handleStepClick = (stepId) => {
+    if (canProceedToStep(stepId)) {
+      setCurrentStep(stepId);
+      if (stepId === 5 && !featDone && !featStreaming) {
+        startFeatStream();
+      }
+    }
+  };
+
   const handleNext = () => {
     if (currentStep < 5) {
       const nextS = currentStep + 1;
-      setCurrentStep(nextS);
-      if (nextS === 5 && !featDone && !featStreaming) {
-        startFeatStream();
+      if (canProceedToStep(nextS)) {
+        setCurrentStep(nextS);
+        if (nextS === 5 && !featDone && !featStreaming) {
+          startFeatStream();
+        }
       }
     } else {
       setVerifyOpen(true);
@@ -493,7 +547,7 @@ const EmployeeCleaningPage = () => {
           }
 
           return (
-            <div key={s.id} className={cls} onClick={() => setCurrentStep(s.id)}>
+            <div key={s.id} className={cls} onClick={() => handleStepClick(s.id)}>
               <div className="clean-step-circle">{s.id === 5 ? '✦' : s.id}</div>
               <div className="clean-step-name">{s.shortName}</div>
               <div className="clean-step-status">{status}</div>
@@ -501,6 +555,38 @@ const EmployeeCleaningPage = () => {
           );
         })}
       </div>
+
+      {/* Step Restriction Popup */}
+      {stepPopup.open && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999
+        }} onClick={() => setStepPopup({ open: false, message: '' })}>
+          <div style={{
+            background: 'rgba(22,27,34,0.98)', border: '1px solid rgba(255,100,100,0.3)',
+            borderRadius: '12px', padding: '24px 32px', maxWidth: 450, textAlign: 'center',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 24, marginBottom: 12 }}>⚠️</div>
+            <div style={{ color: '#fff', fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+              Complete Previous Step First
+            </div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20, lineHeight: 1.5 }}>
+              {stepPopup.message}
+            </div>
+            <button 
+              onClick={() => setStepPopup({ open: false, message: '' })}
+              style={{
+                background: 'var(--primary)', color: '#fff', border: 'none',
+                padding: '10px 24px', borderRadius: '6px', cursor: 'pointer', fontWeight: 500
+              }}
+            >
+              OK, I'll Continue
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Split View */}
       <div className="clean-split-wrap">
@@ -600,7 +686,7 @@ const EmployeeCleaningPage = () => {
                   )}
                 </div>
                 <div className="clean-skip-bar">
-                  <button className="clean-btn clean-btn-ghost clean-skip-btn" onClick={() => setCurrentStep(2)}>Skip This Step</button>
+                  <button className="clean-btn clean-btn-ghost clean-skip-btn" onClick={() => handleStepClick(2)}>Skip This Step</button>
                   <button className="clean-btn clean-btn-ghost clean-skip-btn" style={{color:'var(--purple)', borderColor:'rgba(167,139,250,0.3)'}} onClick={handleAiDecide}>✦ Let AI Decide</button>
                 </div>
               </div>
@@ -628,7 +714,7 @@ const EmployeeCleaningPage = () => {
                   </div>
                 </div>
                 <div className="clean-skip-bar">
-                  <button className="clean-btn clean-btn-ghost clean-skip-btn" onClick={() => setCurrentStep(3)}>Skip This Step</button>
+                  <button className="clean-btn clean-btn-ghost clean-skip-btn" onClick={() => handleStepClick(3)}>Skip This Step</button>
                   <button className="clean-btn clean-btn-ghost clean-skip-btn" style={{color:'var(--purple)', borderColor:'rgba(167,139,250,0.3)'}} onClick={handleAiDecide}>✦ Let AI Decide</button>
                 </div>
               </div>
@@ -651,7 +737,7 @@ const EmployeeCleaningPage = () => {
                   })}
                 </div>
                 <div className="clean-skip-bar">
-                  <button className="clean-btn clean-btn-ghost clean-skip-btn" onClick={() => setCurrentStep(4)}>Skip This Step</button>
+                  <button className="clean-btn clean-btn-ghost clean-skip-btn" onClick={() => handleStepClick(4)}>Skip This Step</button>
                   <button className="clean-btn clean-btn-ghost clean-skip-btn" style={{color:'var(--purple)', borderColor:'rgba(167,139,250,0.3)'}} onClick={handleAiDecide}>✦ Let AI Decide</button>
                 </div>
               </div>
@@ -676,7 +762,7 @@ const EmployeeCleaningPage = () => {
                   )}
                 </div>
                 <div className="clean-skip-bar">
-                  <button className="clean-btn clean-btn-ghost clean-skip-btn" onClick={() => setCurrentStep(5)}>Skip This Step</button>
+                  <button className="clean-btn clean-btn-ghost clean-skip-btn" onClick={() => handleStepClick(5)}>Skip This Step</button>
                   <button className="clean-btn clean-btn-ghost clean-skip-btn" style={{color:'var(--purple)', borderColor:'rgba(167,139,250,0.3)'}} onClick={handleAiDecide}>✦ Let AI Decide</button>
                 </div>
               </div>
@@ -745,7 +831,7 @@ const EmployeeCleaningPage = () => {
             )}
 
             <div style={{ display: 'flex', gap: 8, marginTop: 32, padding: '16px 0 0 0', borderTop: '1px solid var(--border)' }}>
-              {currentStep > 1 && <button className="clean-btn clean-btn-ghost" style={{flex: 1}} onClick={() => setCurrentStep(prev => Math.max(1, prev - 1))}>← Previous</button>}
+              {currentStep > 1 && <button className="clean-btn clean-btn-ghost" style={{flex: 1}} onClick={() => handleStepClick(currentStep - 1)}>← Previous</button>}
               <button className="clean-btn clean-btn-primary" style={{flex: 1}} onClick={handleNext}>{currentStep === 5 ? 'Finalize →' : 'Next Step →'}</button>
             </div>
           </div>
@@ -756,7 +842,7 @@ const EmployeeCleaningPage = () => {
       <div className="clean-action-bar">
         <div className="clean-step-indicator">Step {currentStep} of 5 — {STEPS[currentStep-1].name}</div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="clean-btn clean-btn-ghost" onClick={() => setCurrentStep(prev => Math.max(1, prev - 1))}>← Previous</button>
+          <button className="clean-btn clean-btn-ghost" onClick={() => handleStepClick(currentStep - 1)}>← Previous</button>
           <button className="clean-btn clean-btn-primary" onClick={handleNext}>{currentStep === 5 ? 'Finalize →' : 'Next Step →'}</button>
         </div>
       </div>

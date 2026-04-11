@@ -86,6 +86,8 @@ export default function EmployeeLogin() {
     const [loginSuccess, setLoginSuccess] = useState(false);
     const [userData, setUserData] = useState(null);
 
+    const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+
     const login = async () => {
         if (!email || !password) {
             setError("Please fill in all fields");
@@ -94,7 +96,7 @@ export default function EmployeeLogin() {
         setError("");
         setLoading(true);
         try {
-            const res = await axios.post("http://localhost:5000/api/auth/login", {
+            const res = await axios.post(`${API_URL}/auth/login`, {
                 email,
                 password
             });

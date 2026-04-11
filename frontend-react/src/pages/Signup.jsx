@@ -118,6 +118,8 @@ export default function Signup() {
         return { level: 4, label: "Strong", color: "#3fb950" };
     })();
 
+    const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+
     const signup = async () => {
         if (!firstName.trim() || !lastName.trim()) {
             setError("First name and last name are required");
@@ -139,7 +141,7 @@ export default function Signup() {
         setError("");
         setLoading(true);
         try {
-            const res = await axios.post("http://localhost:5000/api/auth/signup", {
+            const res = await axios.post(`${API_URL}/auth/signup`, {
                 firstName: firstName.trim(),
                 lastName: lastName.trim(),
                 phone: phone.trim() || undefined,

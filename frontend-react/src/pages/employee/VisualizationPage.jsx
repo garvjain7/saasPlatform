@@ -27,7 +27,22 @@ const fetchCleanedData = async (datasetId, params = {}) => {
   return res.json();
 };
 
-const COLORS = ['#58a6ff', '#3fb950', '#bc8cff', '#d29922', '#f85149', '#79c0ff', '#d2a8ff', '#ffa657'];
+const COLORS = [
+  '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', 
+  '#dfe6e9', '#fd79a8', '#a29bfe', '#00b894', '#e17055',
+  '#74b9ff', '#fdcb6e', '#81ecec', '#fab1a0', '#d63031'
+];
+
+const PIE_COLORS = [
+  { fill: '#ff7675', stroke: '#d63031' },
+  { fill: '#74b9ff', stroke: '#0984e3' },
+  { fill: '#55efc4', stroke: '#00b894' },
+  { fill: '#ffeaa7', stroke: '#fdcb6e' },
+  { fill: '#a29bfe', stroke: '#6c5ce7' },
+  { fill: '#fd79a8', stroke: '#e84393' },
+  { fill: '#fab1a0', stroke: '#e17055' },
+  { fill: '#81ecec', stroke: '#00cec9' },
+];
 
 const TooltipBox = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
@@ -180,10 +195,39 @@ const VisualizationPage = () => {
     return data.headers.filter(h => h !== 'Unnamed: 0.1' && h !== 'Unnamed: 0');
   }, [data?.headers]);
 
+  // Update chart when X or Y axis changes
+  useEffect(() => {
+    if (data?.headers?.length > 0 && !isInitialized.current) {
+      const catCol = data.headers.find(h => data.columnTypes?.[h] === 'categorical');
+      const numCol = data.headers.find(h => data.columnTypes?.[h] === 'numeric');
+      setChartXAxis(catCol || data.headers[0]);
+      setChartYAxis(numCol || data.headers[1] || '');
+      isInitialized.current = true;
+    }
+  }, [data]);
+
   const chartData = useMemo(() => {
-    if (!data?.rows || !chartXAxis || !chartYAxis || !headers.length) return [];
+    if (!data?.rows || !headers.length) return [];
     
-    const isNumericY = data.columnTypes?.[chartYAxis] === 'numeric';
+    const xAxis = chartXAxis || headers[0];
+    const yAxis = chartYAxis || '';
+    
+    // If no Y axis selected, just count occurrences of X
+    if (!yAxis) {
+      const grouped = {};
+      for (let i = 0; i < data.rows.length; i++) {
+        const row = data.rows[i];
+        const key = row[xAxis] || 'Unknown';
+        grouped[key] = (grouped[key] || 0) + 1;
+      }
+      return Object.entries(grouped)
+        .map(([name, value]) => ({ name: String(name).substring(0, 18), value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 10);
+    }
+    
+    // Both X and Y selected
+    const isNumericY = data.columnTypes?.[yAxis] === 'numeric';
     const grouped = {};
     const counts = {};
     const maxs = {};
@@ -192,8 +236,8 @@ const VisualizationPage = () => {
     
     for (let i = 0; i < data.rows.length; i++) {
       const row = data.rows[i];
-      const key = row[chartXAxis] || 'Unknown';
-      const val = row[chartYAxis];
+      const key = row[xAxis] || 'Unknown';
+      const val = row[yAxis];
       
       if (isNumericY) {
         const numVal = parseFloat(val);
@@ -237,7 +281,7 @@ const VisualizationPage = () => {
 
   const chartStats = useMemo(() => {
     if (!chartData.length) return null;
-    const isNumericY = data?.columnTypes?.[chartYAxis] === 'numeric';
+    const isNumericY = chartYAxis && data?.columnTypes?.[chartYAxis] === 'numeric';
     if (!isNumericY) {
       return { totalSum: null, totalCount: chartData.reduce((acc, d) => acc + d.rawValue, 0), avg: null, max: null, min: null };
     }
@@ -251,8 +295,13 @@ const VisualizationPage = () => {
 
   const renderMainChart = () => {
     if (!chartData.length) return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 13 }}>
-        Select X and Y axes to generate a chart
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 13 }}>
+        <div style={{ marginBottom: 8 }}>Select columns to visualize</div>
+        {chartXAxis && !chartYAxis && (
+          <div style={{ fontSize: 11, color: 'var(--primary)' }}>
+            Showing: Count of {chartXAxis}
+          </div>
+        )}
       </div>
     );
     
@@ -261,6 +310,10 @@ const VisualizationPage = () => {
       margin: { top: 10, right: 10, left: 0, bottom: 0 }
     };
     
+    const chartTitle = chartYAxis 
+      ? `${chartYAxis} by ${chartXAxis}` 
+      : `Count of ${chartXAxis}`;
+    
     switch (chartType) {
       case 'bar':
         return (
@@ -268,8 +321,8 @@ const VisualizationPage = () => {
             <BarChart {...chartProps}>
               <defs>
                 <linearGradient id="barFillGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#58a6ff" stopOpacity={1} />
-                  <stop offset="100%" stopColor="#58a6ff" stopOpacity={0.5} />
+                  <stop offset="0%" stopColor="#74b9ff" stopOpacity={1} />
+                  <stop offset="100%" stopColor="#0984e3" stopOpacity={0.6} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
@@ -277,7 +330,13 @@ const VisualizationPage = () => {
               <YAxis tick={{ fill: '#3d4f6e', fontSize: 9 }} />
               <Tooltip content={<TooltipBox />} />
               <Bar dataKey="value" name={chartYAxis} fill="url(#barFillGrad)" radius={[6, 6, 0, 0]}>
-                {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                {chartData.map((entry, i) => (
+                  <Cell 
+                    key={i} 
+                    fill={COLORS[i % COLORS.length]} 
+                    fillOpacity={0.85}
+                  />
+                ))}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -288,36 +347,138 @@ const VisualizationPage = () => {
             <LineChart {...chartProps}>
               <defs>
                 <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="#58a6ff" />
-                  <stop offset="100%" stopColor="#bc8cff" />
+                  <stop offset="0%" stopColor="#74b9ff" />
+                  <stop offset="100%" stopColor="#a29bfe" />
                 </linearGradient>
+                <filter id="lineShadow">
+                  <feDropShadow dx="0" dy="1" stdDeviation="2" floodOpacity="0.4"/>
+                </filter>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
               <XAxis dataKey="name" tick={{ fill: '#3d4f6e', fontSize: 9 }} />
               <YAxis tick={{ fill: '#3d4f6e', fontSize: 9 }} />
               <Tooltip content={<TooltipBox />} />
-              <Line type="monotone" dataKey="value" name={chartYAxis} stroke="url(#lineGrad)" strokeWidth={3} dot={{ fill: '#58a6ff', strokeWidth: 2, stroke: '#fff', r: 4 }} />
+              <Line 
+                type="monotone" 
+                dataKey="value" 
+                name={chartYAxis} 
+                stroke="url(#lineGrad)" 
+                strokeWidth={3} 
+                strokeLinecap="round"
+                dot={{ fill: '#74b9ff', strokeWidth: 2, stroke: '#fff', r: 4, filter: 'url(#lineShadow)' }}
+                activeDot={{ r: 6, fill: '#a29bfe', stroke: '#fff', strokeWidth: 2 }}
+              />
             </LineChart>
           </ResponsiveContainer>
         );
       case 'pie':
+        if (!chartData || chartData.length === 0) {
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 13 }}>
+              No data available for pie chart
+            </div>
+          );
+        }
         return (
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <defs>
-                {COLORS.map((color, i) => (
+                {PIE_COLORS.map((c, i) => (
                   <linearGradient key={i} id={`pieGrad${i}`} x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor={color} stopOpacity={1} />
-                    <stop offset="100%" stopColor={color} stopOpacity={0.6} />
+                    <stop offset="0%" stopColor={c.fill} stopOpacity={1} />
+                    <stop offset="100%" stopColor={c.fill} stopOpacity={0.7} />
                   </linearGradient>
                 ))}
+                <filter id="pieShadow">
+                  <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.3"/>
+                </filter>
               </defs>
-              <Pie data={chartData} dataKey="value" nameKey="name" outerRadius={85} innerRadius={40} paddingAngle={3}
-                label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}>
-                {chartData.map((_, i) => <Cell key={i} fill={`url(#pieGrad${i % COLORS.length})`} stroke="rgba(22,27,34,0.5)" strokeWidth={2} />)}
+              <Pie 
+                data={chartData} 
+                dataKey="value" 
+                nameKey="name" 
+                outerRadius={75} 
+                innerRadius={40} 
+                paddingAngle={2}
+                animationBegin={0}
+                animationDuration={800}
+                animationEasing="ease-out"
+                label={({ name, value, percent }) => {
+                  if (value === undefined || value === null) return null;
+                  const pct = percent ? (percent * 100).toFixed(0) : 0;
+                  return (
+                    <text 
+                      fill="#fff" 
+                      textAnchor="middle" 
+                      dominantBaseline="middle"
+                      style={{ 
+                        fontSize: '11px', 
+                        fontWeight: 600,
+                        filter: 'drop-shadow(0px 1px 2px rgba(0,0,0,0.5))',
+                        fontFamily: "'DM Mono', monospace"
+                      }}
+                    >
+                      {value > 1000 ? `${(value/1000).toFixed(1)}k` : value}
+                    </text>
+                  );
+                }}
+              >
+                {chartData.map((entry, index) => (
+                  <Cell 
+                    key={`cell-${index}`} 
+                    fill={`url(#pieGrad${index % PIE_COLORS.length})`} 
+                    stroke="transparent"
+                    strokeWidth={0}
+                  />
+                ))}
               </Pie>
-              <Tooltip content={<TooltipBox />} />
-              <Legend formatter={v => <span style={{ color: '#8b949e', fontSize: 9 }}>{v}</span>} />
+              <Tooltip 
+                content={({ active, payload }) => {
+                  if (active && payload && payload.length) {
+                    const data = payload[0]?.payload;
+                    const idx = payload[0]?.dataPointIndex;
+                    if (!data || idx === undefined || idx === null) return null;
+                    const total = chartData.reduce((a, b) => a + (Number(b.value) || 0), 0);
+                    return (
+                      <div style={{
+                        background: 'rgba(22,27,34,0.98)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '12px',
+                        padding: '12px 16px',
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                      }}>
+                        <div style={{ color: '#fff', fontWeight: 600, marginBottom: 4, fontSize: 12 }}>
+                          {data.name || 'Unknown'}
+                        </div>
+                        <div style={{ 
+                          color: PIE_COLORS[idx % PIE_COLORS.length].fill, 
+                          fontSize: 18, 
+                          fontWeight: 700,
+                          fontFamily: "'DM Mono', monospace"
+                        }}>
+                          {typeof data.value === 'number' ? data.value.toLocaleString() : data.value}
+                        </div>
+                        <div style={{ color: '#8b949e', fontSize: 10, marginTop: 4 }}>
+                          {total > 0 ? ((Number(data.value) / total) * 100).toFixed(1) : 0}% of total
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Legend 
+                verticalAlign="bottom" 
+                height={50}
+                layout="horizontal"
+                align="center"
+                wrapperStyle={{ paddingTop: '10px', lineHeight: '24px' }}
+                formatter={(value) => (
+                  <span style={{ color: '#8b949e', fontSize: 9, fontFamily: "'DM Mono', monospace", marginRight: 8 }}>
+                    {value}
+                  </span>
+                )}
+              />
             </PieChart>
           </ResponsiveContainer>
         );
@@ -327,20 +488,32 @@ const VisualizationPage = () => {
             <AreaChart {...chartProps}>
               <defs>
                 <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#58a6ff" stopOpacity={0.5} />
-                  <stop offset="50%" stopColor="#58a6ff" stopOpacity={0.25} />
-                  <stop offset="100%" stopColor="#58a6ff" stopOpacity={0.02} />
+                  <stop offset="0%" stopColor="#74b9ff" stopOpacity={0.5} />
+                  <stop offset="50%" stopColor="#a29bfe" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="#a29bfe" stopOpacity={0.02} />
                 </linearGradient>
                 <linearGradient id="areaStroke" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="#58a6ff" />
-                  <stop offset="100%" stopColor="#3fb950" />
+                  <stop offset="0%" stopColor="#74b9ff" />
+                  <stop offset="100%" stopColor="#55efc4" />
                 </linearGradient>
+                <filter id="areaShadow">
+                  <feDropShadow dx="0" dy="1" stdDeviation="2" floodOpacity="0.3"/>
+                </filter>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
               <XAxis dataKey="name" tick={{ fill: '#3d4f6e', fontSize: 9 }} />
               <YAxis tick={{ fill: '#3d4f6e', fontSize: 9 }} />
               <Tooltip content={<TooltipBox />} />
-              <Area type="monotone" dataKey="value" name={chartYAxis} stroke="url(#areaStroke)" fill="url(#areaGrad)" strokeWidth={3} />
+              <Area 
+                type="monotone" 
+                dataKey="value" 
+                name={chartYAxis} 
+                stroke="url(#areaStroke)" 
+                fill="url(#areaGrad)" 
+                strokeWidth={3}
+                filter="url(#areaShadow)"
+                animationDuration={800}
+              />
             </AreaChart>
           </ResponsiveContainer>
         );
@@ -576,29 +749,41 @@ const VisualizationPage = () => {
                 ))}
               </select>
             </div>
-            <div style={{ width: 1, height: 16, background: 'var(--border-color)' }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--text-muted)' }}>AGG</span>
-              <select 
-                className="admin-filter-select" 
-                value={aggregation} 
-                onChange={(e) => setAggregation(e.target.value)} 
-                style={{ fontSize: 9, minWidth: 70 }}
-              >
-                <option value="sum">Sum</option>
-                <option value="count">Count</option>
-                <option value="avg">Avg</option>
-                <option value="max">Max</option>
-                <option value="min">Min</option>
-              </select>
-            </div>
-            {chartStats && (
+            {chartYAxis && (
+              <>
+                <div style={{ width: 1, height: 16, background: 'var(--border-color)' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--text-muted)' }}>AGG</span>
+                  <select 
+                    className="admin-filter-select" 
+                    value={aggregation} 
+                    onChange={(e) => setAggregation(e.target.value)} 
+                    style={{ fontSize: 9, minWidth: 70 }}
+                  >
+                    <option value="sum">Sum</option>
+                    <option value="count">Count</option>
+                    <option value="avg">Avg</option>
+                    <option value="max">Max</option>
+                    <option value="min">Min</option>
+                  </select>
+                </div>
+              </>
+            )}
+            {chartStats && chartYAxis && data?.columnTypes?.[chartYAxis] === 'numeric' && (
               <>
                 <div style={{ width: 1, height: 16, background: 'var(--border-color)' }} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontFamily: "'DM Mono', monospace", fontSize: 9 }}>
                   <span style={{ color: 'var(--primary)' }}>Σ: <strong>{chartStats.totalSum?.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></span>
                   <span style={{ color: 'var(--accent)' }}>Cnt: <strong>{chartStats.totalCount?.toLocaleString()}</strong></span>
                   <span style={{ color: 'var(--success)' }}>Avg: <strong>{chartStats.avg?.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></span>
+                </div>
+              </>
+            )}
+            {chartStats && (!chartYAxis || data?.columnTypes?.[chartYAxis] !== 'numeric') && (
+              <>
+                <div style={{ width: 1, height: 16, background: 'var(--border-color)' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontFamily: "'DM Mono', monospace", fontSize: 9 }}>
+                  <span style={{ color: 'var(--accent)' }}>Total: <strong>{chartStats.totalCount?.toLocaleString()}</strong></span>
                 </div>
               </>
             )}
@@ -612,7 +797,7 @@ const VisualizationPage = () => {
             <div className="glass-panel" style={{ padding: '12px 14px' }}>
               <div style={{ marginBottom: 6 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>
-                  {chartYAxis || 'Value'} by {chartXAxis || 'Category'}
+                  {chartYAxis ? `${chartYAxis} by ${chartXAxis}` : `Count by ${chartXAxis}`}
                 </div>
                 <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--text-muted)' }}>
                   {chartType.charAt(0).toUpperCase() + chartType.slice(1)} · Top 10 groups
@@ -622,13 +807,13 @@ const VisualizationPage = () => {
             </div>
 
             {/* Pie Chart alongside */}
-            {data && (() => {
-              const catCol = data.headers?.find(h =>
+            {data && data.headers && (() => {
+              const catCol = data.headers.find(h =>
                 data.columnTypes?.[h] === 'categorical' && data.columnStats?.[h]?.uniqueCount >= 2 && data.columnStats?.[h]?.uniqueCount <= 8
                 && h !== 'name' && h !== 'processor'
               );
-              const numCol = data.headers?.find(h => data.columnTypes?.[h] === 'numeric' && h !== 'Unnamed: 0.1' && h !== 'Unnamed: 0');
-              if (!catCol || !numCol) return null;
+              const numCol = data.headers.find(h => data.columnTypes?.[h] === 'numeric' && h !== 'Unnamed: 0.1' && h !== 'Unnamed: 0');
+              if (!catCol || !numCol || !data.rows?.length) return null;
               const grouped = {};
               data.rows.forEach(row => {
                 const key = row[catCol] || 'Unknown';
@@ -641,21 +826,90 @@ const VisualizationPage = () => {
                 .sort((a, b) => b.value - a.value).slice(0, 6);
               if (pieData.length < 2) return null;
               return (
-                <div className="glass-panel" style={{ padding: '12px 14px' }}>
-                  <div style={{ marginBottom: 6 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>{numCol} by {catCol}</div>
-                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--text-muted)' }}>
+                <div className="glass-panel" style={{ padding: '12px 14px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ 
+                        width: 8, height: 8, borderRadius: '50%', 
+                        background: 'linear-gradient(135deg, #ff7675, #74b9ff)' 
+                      }} />
+                      {numCol} by {catCol}
+                    </div>
+                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--text-muted)', marginTop: 2 }}>
                       Donut · {pieData.length} categories
                     </div>
                   </div>
-                  <div style={{ height: 190 }}>
+                  <div style={{ height: 180 }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={30} outerRadius={60} paddingAngle={2}>
-                          {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                        <defs>
+                          {PIE_COLORS.map((c, i) => (
+                            <linearGradient key={i} id={`donutGrad${i}`} x1="0" y1="0" x2="1" y2="1">
+                              <stop offset="0%" stopColor={c.fill} stopOpacity={1} />
+                              <stop offset="100%" stopColor={c.fill} stopOpacity={0.6} />
+                            </linearGradient>
+                          ))}
+                        </defs>
+                        <Pie 
+                          data={pieData} 
+                          dataKey="value" 
+                          nameKey="name" 
+                          innerRadius={35} 
+                          outerRadius={70} 
+                          paddingAngle={2}
+                          animationBegin={0}
+                          animationDuration={600}
+                          label={({ value }) => value > 1000 ? `${(value/1000).toFixed(1)}k` : value}
+                        >
+                          {pieData.map((entry, index) => (
+                            <Cell 
+                              key={`cell-${index}`} 
+                              fill={`url(#donutGrad${index % PIE_COLORS.length})`}
+                              stroke="transparent"
+                              strokeWidth={0}
+                            />
+                          ))}
                         </Pie>
-                        <Tooltip content={<TooltipBox />} />
-                        <Legend formatter={v => <span style={{ color: '#8b949e', fontSize: 8 }}>{v}</span>} />
+                        <Tooltip 
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0]?.payload;
+                              const idx = payload[0]?.dataPointIndex;
+                              if (idx === undefined || idx === null || !data) return null;
+                              return (
+                                <div style={{
+                                  background: 'rgba(22,27,34,0.95)',
+                                  border: '1px solid rgba(255,255,255,0.1)',
+                                  borderRadius: '8px',
+                                  padding: '8px 12px',
+                                }}>
+                                  <div style={{ color: '#fff', fontSize: 11, fontWeight: 500 }}>{data.name || 'Unknown'}</div>
+                                  <div style={{ 
+                                    color: PIE_COLORS[idx % PIE_COLORS.length].fill, 
+                                    fontSize: 14, 
+                                    fontWeight: 700,
+                                    fontFamily: "'DM Mono', monospace"
+                                  }}>
+                                    {Number(data.value)?.toLocaleString() || 0}
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <Legend 
+                          verticalAlign="bottom" 
+                          height={40}
+                          layout="horizontal"
+                          align="center"
+                          wrapperStyle={{ paddingTop: '8px', lineHeight: '20px' }}
+                          formatter={(value) => (
+                            <span style={{ color: '#8b949e', fontSize: 8, fontFamily: "'DM Mono', monospace", marginRight: 6 }}>
+                              {value}
+                            </span>
+                          )}
+                        />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>

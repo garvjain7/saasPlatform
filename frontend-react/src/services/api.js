@@ -31,7 +31,7 @@ export const getMe = async () => {
         if (response.data.success) {
             const user = response.data.user;
             localStorage.setItem('role', user.role);
-            localStorage.setItem('userName', user.name);
+            localStorage.setItem('userName', user.full_name || user.name);
             return user;
         }
     } catch (err) {

@@ -46,6 +46,40 @@ router.get("/cleaned-data/:id", protect, async (req, res, next) => {
   }
 }, getCleanedData);
 
-router.get("/original-data/:id", protect, getOriginalData);
+router.get("/original-data/:id", protect, async (req, res, next) => {
+  const datasetId = req.params.id;
+  
+  try {
+    const userId = req.user?.userId || req.user?.email;
+    const userEmail = req.user?.email;
+    
+    let userName = userEmail?.split('@')[0] || 'Unknown';
+    let datasetName = datasetId;
+    
+    if (userId && datasetId) {
+      try {
+        const dsResult = await pool.query(
+          `SELECT d.name, COALESCE(u.email, $2) as uploaded_by 
+           FROM datasets d 
+           LEFT JOIN users u ON d.uploaded_by = u.user_id 
+           WHERE d.dataset_id = $1 OR d.id::text = $1`,
+          [datasetId, userEmail]
+        );
+        if (dsResult.rows.length > 0) {
+          datasetName = dsResult.rows[0].name || datasetName;
+          const uploadedBy = dsResult.rows[0].uploaded_by;
+          userName = uploadedBy ? uploadedBy.split('@')[0] : userName;
+        }
+      } catch (e) {}
+      
+      await logCleaningActivity(userId, userName, userEmail, datasetId, datasetName, 'ok', 'Accessed original data for cleaning');
+    }
+    
+    next();
+  } catch (err) {
+    console.error("Activity logging error:", err);
+    next();
+  }
+}, getOriginalData);
 
 export default router;

@@ -1,6 +1,8 @@
 import axios from "axios";
 import { useState } from "react";
 
+const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+
 export default function EmployeeDashboard() {
     const [file, setFile] = useState(null);
 
@@ -8,7 +10,7 @@ export default function EmployeeDashboard() {
         const form = new FormData();
         form.append("file", file);
 
-        await axios.post("http://localhost:5000/employee/upload", form, {
+        await axios.post(`${API_URL}/upload`, form, {
             headers: { authorization: localStorage.getItem("token") }
         });
 

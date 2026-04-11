@@ -354,6 +354,8 @@ export const getDashboardConfig = async (req, res) => {
   // Try multiple paths to find the dataset files
   const possiblePaths = [
     path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, datasetId),
+    path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, `temp-${datasetId}`),
+    path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, datasetId.replace(/^temp-/, '')),
     path.resolve(process.cwd(), "..", "ml_engine", "data", "users", "tharunmellacheruvu@gmail.com", datasetId),
     path.resolve(process.cwd(), "..", "ml_engine", "data", "users", "demo@example.com", datasetId),
   ];
@@ -366,6 +368,24 @@ export const getDashboardConfig = async (req, res) => {
       datasetDir = p;
       break;
     } catch {}
+  }
+  
+  // Try to find any dataset folder for this user
+  if (!datasetDir && userId) {
+    try {
+      const userDataDir = path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId);
+      const entries = await fs.readdir(userDataDir);
+      for (const entry of entries) {
+        const checkPath = path.join(userDataDir, entry, "dashboard_config.json");
+        try {
+          await fs.access(checkPath);
+          datasetDir = path.join(userDataDir, entry);
+          break;
+        } catch {}
+      }
+    } catch (err) {
+      console.warn("Could not read user directory:", err.message);
+    }
   }
   
   if (!datasetDir) {

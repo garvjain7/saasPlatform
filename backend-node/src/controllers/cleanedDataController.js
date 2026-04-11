@@ -63,6 +63,8 @@ export const getCleanedData = async (req, res) => {
     // Try multiple paths to find the dataset files
     const possiblePaths = [
       path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, datasetId),
+      path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, `temp-${datasetId}`),
+      path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, datasetId.replace(/^temp-/, '')),
       path.resolve(process.cwd(), "..", "ml_engine", "data", "users", "tharunmellacheruvu@gmail.com", datasetId),
       path.resolve(process.cwd(), "..", "ml_engine", "data", "users", "demo@example.com", datasetId),
     ];
@@ -76,8 +78,29 @@ export const getCleanedData = async (req, res) => {
         await fs.access(cp);
         datasetDir = p;
         cleanedPath = cp;
+        console.log(`[CLEANED-DATA] Found at: ${cp}`);
         break;
       } catch {}
+    }
+
+    // If not found, try to find any dataset folder for this user
+    if (!cleanedPath && userId) {
+      try {
+        const userDataDir = path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId);
+        const entries = await fs.readdir(userDataDir);
+        for (const entry of entries) {
+          const checkPath = path.join(userDataDir, entry, "cleaned_data.csv");
+          try {
+            await fs.access(checkPath);
+            datasetDir = path.join(userDataDir, entry);
+            cleanedPath = checkPath;
+            console.log(`[CLEANED-DATA] Found at: ${checkPath}`);
+            break;
+          } catch {}
+        }
+      } catch (err) {
+        console.log(`[CLEANED-DATA] Could not read user directory: ${err.message}`);
+      }
     }
 
     if (!cleanedPath) {
@@ -224,6 +247,8 @@ export const getOriginalData = async (req, res) => {
 
     const possiblePaths = [
       path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, datasetId),
+      path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, `temp-${datasetId}`),
+      path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, datasetId.replace(/^temp-/, '')),
       path.resolve(process.cwd(), "..", "ml_engine", "data", "users", "tharunmellacheruvu@gmail.com", datasetId),
       path.resolve(process.cwd(), "..", "ml_engine", "data", "users", "demo@example.com", datasetId),
     ];
@@ -237,11 +262,43 @@ export const getOriginalData = async (req, res) => {
         await fs.access(op);
         datasetDir = p;
         originalPath = op;
+        console.log(`[ORIGINAL-DATA] Found at: ${op}`);
         break;
       } catch {}
     }
 
+    // Try to find any dataset folder for this user
+    if (!originalPath && userId) {
+      try {
+        const userDataDir = path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId);
+        const entries = await fs.readdir(userDataDir);
+        for (const entry of entries) {
+          const checkPath = path.join(userDataDir, entry, "raw_data.csv");
+          try {
+            await fs.access(checkPath);
+            datasetDir = path.join(userDataDir, entry);
+            originalPath = checkPath;
+            console.log(`[ORIGINAL-DATA] Found at: ${checkPath}`);
+            break;
+          } catch {}
+        }
+      } catch (err) {
+        console.log(`[ORIGINAL-DATA] Could not read user directory: ${err.message}`);
+      }
+    }
+
     if (!originalPath) {
+      return res.status(404).json({
+        success: false,
+        message: "Original data not found. Ensure the dataset has been processed.",
+      });
+    }
+
+    let csvText;
+    try {
+      csvText = await fs.readFile(originalPath, "utf-8");
+    } catch (err) {
+      console.log(`[ORIGINAL-DATA] File read error: ${err.message}`);
       return res.status(404).json({
         success: false,
         message: "Original data not found. Ensure the dataset has been processed.",

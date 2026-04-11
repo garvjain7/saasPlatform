@@ -22,7 +22,7 @@ const EmployeeLayout = ({ children }) => {
   useEffect(() => {
     getMe().then(user => {
       if (user) {
-        setUserName(user.name);
+        setUserName(user.full_name || user.name);
       }
     });
   }, []);
