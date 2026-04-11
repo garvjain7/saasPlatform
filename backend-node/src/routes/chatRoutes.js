@@ -22,7 +22,7 @@ const wrapWithActivity = (handler) => {
       if (userId && datasetId) {
         try {
           const dsResult = await pool.query(
-            "SELECT name, COALESCE(uploaded_by, $2) as uploaded_by FROM datasets WHERE dataset_id = $1 OR id::text = $1",
+            `SELECT d.dataset_name AS name, COALESCE(u.email, $2) as uploaded_by FROM datasets d LEFT JOIN users u ON d.uploaded_by = u.user_id WHERE d.dataset_id = $1`,
             [datasetId, userEmail]
           );
           if (dsResult.rows.length > 0) {
@@ -49,8 +49,8 @@ const wrapWithActivity = (handler) => {
       if (req.activityUserId && req.activityDatasetId) {
         logQueryActivity(
           req.activityUserId,
-          req.activityUserName || userEmail?.split('@')[0],
-          userEmail,
+          req.activityUserName || req.activityUserEmail?.split('@')[0],
+          req.activityUserEmail,
           req.activityDatasetId,
           req.activityDatasetName || datasetId,
           req.body.message || req.body.question || 'Query',

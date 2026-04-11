@@ -31,7 +31,7 @@ export const getMe = async () => {
         if (response.data.success) {
             const user = response.data.user;
             localStorage.setItem('role', user.role);
-            localStorage.setItem('userName', user.name);
+            localStorage.setItem('userName', user.name || user.full_name || 'User');
             return user;
         }
     } catch (err) {
@@ -106,10 +106,16 @@ export const getAnalytics = async (datasetId) => {
     return response.data;
 };
 
-export const askQuery = async (datasetId, question) => {
+export const getDatasetAnalysis = async (datasetId) => {
+    const response = await api.get(`/datasets/${datasetId}/analysis`);
+    return response.data;
+};
+
+export const askQuery = async (datasetId, question, model = 'groq') => {
     const response = await api.post('/query', {
         datasetId: datasetId,
         question: question,
+        model: model,
     });
     return response.data;
 };

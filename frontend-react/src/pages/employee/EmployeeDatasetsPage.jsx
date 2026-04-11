@@ -198,7 +198,7 @@ const EmployeeDatasetsPage = () => {
           <div className="emp-topbar-title">Company Datasets</div>
           <div className="emp-topbar-sub">Manage and explore your data assets</div>
         </div>
-        <div className="emp-topbar-actions">
+        <div className="emp-topbar-actions" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <div className="emp-search-bar">
             <Search size={14} />
             <input
@@ -208,6 +208,13 @@ const EmployeeDatasetsPage = () => {
               onChange={e => setSearchQuery(e.target.value)}
             />
           </div>
+          <button 
+            className="emp-btn emp-btn-primary"
+            onClick={() => navigate('/employee/upload')}
+            style={{ padding: '0 16px', height: '36px' }}
+          >
+            Upload Dataset
+          </button>
         </div>
       </div>
 

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Send, Bot, User, Copy, Check, Sparkles, LayoutDashboard, Trash2, Database } from 'lucide-react';
-import { askQuery, getDatasets } from '../../services/api';
+import { askQuery, getDatasets, getDatasetAnalysis } from '../../services/api';
 import EmployeeLayout from '../../layout/EmployeeLayout';
 
 function RichText({ text }) {
@@ -131,12 +131,14 @@ const EmployeeChatPage = () => {
   const datasetId = searchParams.get('ds') || null;
   const [availableDatasets, setAvailableDatasets] = useState([]);
   const [selectedDataset, setSelectedDataset] = useState(null);
+  const [datasetMeta, setDatasetMeta] = useState(null);
   const [messages, setMessages] = useState([{
     id: 0, role: 'ai',
     content: "👋 Hello! I'm your **AI Data Assistant**. Ask me about **totals**, **trends**, **top performers**, **anomalies**, **forecasts**, or anything about your data!\n\nSelect a dataset from the dropdown above and try one of the suggested questions on the left →",
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   }]);
   const [input, setInput] = useState('');
+  const [selectedModel, setSelectedModel] = useState('groq');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCols, setSelectedCols] = useState([]);
   const [queryHistory, setQueryHistory] = useState([]);
@@ -167,6 +169,18 @@ const EmployeeChatPage = () => {
     loadDatasets();
   }, [datasetId]);
 
+  // Load dataset meta when dataset changes
+  useEffect(() => {
+    if (selectedDataset && (selectedDataset.dataset_id || selectedDataset.id)) {
+      const id = selectedDataset.dataset_id || selectedDataset.id;
+      getDatasetAnalysis(id).then(meta => {
+        if (meta && meta.success) setDatasetMeta(meta);
+      }).catch(err => console.warn('Could not load dataset meta:', err));
+    } else {
+      setDatasetMeta(null);
+    }
+  }, [selectedDataset]);
+
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isLoading]);
 
   const handleSend = useCallback(async (text) => {
@@ -189,7 +203,7 @@ const EmployeeChatPage = () => {
     try {
       // Try to get real response from backend
       if (dsId) {
-        const response = await askQuery(dsId, msg);
+        const response = await askQuery(dsId, msg, selectedModel);
         let answer = response?.answer || "I'm sorry, I couldn't compute an answer for that.";
         
         // Check for image-related errors
@@ -200,7 +214,7 @@ const EmployeeChatPage = () => {
         }
         
         const bid = msgId.current++;
-        setMessages(prev => [...prev, { id: bid, role: 'ai', content: buildResponseHTML({ text: answer }), time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
+        setMessages(prev => [...prev, { id: bid, role: 'ai', content: buildResponseHTML({ text: answer, code: response?.code }), time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
       } else {
         // Fallback to mock response
         const r = getResponse(msg);
@@ -244,11 +258,11 @@ const EmployeeChatPage = () => {
           <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
             {/* Dataset Info */}
             <div style={{ background: 'rgba(13,17,23,0.95)', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 4 }}>Customer_Data.xlsx</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 4 }}>{selectedDataset?.name || datasetMeta?.dataset_name || 'Select a Dataset'}</div>
               <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--text-muted)', lineHeight: 1.8 }}>
-                <span style={{ color: 'var(--primary)' }}>12,450</span> rows · <span style={{ color: 'var(--primary)' }}>24</span> cols<br />
-                Version <span style={{ color: 'var(--primary)' }}>v3</span> · Cleaned<br />
-                Source: acme-prod/crm
+                <span style={{ color: 'var(--primary)' }}>{datasetMeta?.row_count?.toLocaleString() || 0}</span> rows · <span style={{ color: 'var(--primary)' }}>{datasetMeta?.column_count || 0}</span> cols<br />
+                Status: <span style={{ color: 'var(--success)' }}>{selectedDataset?.upload_status || 'Ready'}</span><br />
+                Source: Uploaded
               </div>
             </div>
 
@@ -256,8 +270,8 @@ const EmployeeChatPage = () => {
             <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--text-muted)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8 }}>Columns</div>
             <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--text-muted)', marginBottom: 6 }}>Click to reference in query</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 6 }}>
-              {COLUMNS.map(col => {
-                const tc = colTypeColors[col.type];
+              {(datasetMeta?.columns?.length > 0 ? datasetMeta.columns : COLUMNS).map(col => {
+                const tc = colTypeColors[col.type] || colTypeColors['cat'];
                 const isSelected = selectedCols.includes(col.name);
                 return (
                   <span
@@ -340,7 +354,20 @@ const EmployeeChatPage = () => {
                 </div>
               )}
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <select 
+                value={selectedModel} 
+                onChange={(e) => setSelectedModel(e.target.value)}
+                style={{
+                  background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)',
+                  color: '#fff', padding: '4px 8px', borderRadius: '6px', fontSize: 11,
+                  outline: 'none', cursor: 'pointer'
+                }}
+              >
+                <option value="groq">Groq (Llama 3)</option>
+                <option value="openai">OpenAI (GPT-4o)</option>
+                <option value="ollama">Ollama (Local)</option>
+              </select>
               <button className="emp-btn emp-btn-ghost emp-btn-sm" onClick={clearChat}><Trash2 size={12} /> Clear</button>
               <button className="emp-btn emp-btn-ghost emp-btn-sm" onClick={() => navigate('/employee/dashboard')}><LayoutDashboard size={12} /> Dashboard</button>
             </div>

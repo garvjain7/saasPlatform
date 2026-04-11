@@ -34,8 +34,9 @@ export const uploadDataset = async (req, res) => {
         throw new Error("No company in database — run schema.txt seed first");
       }
 
+      const fileHash = crypto.randomBytes(16).toString('hex');
       const insertResult = await pool.query(
-        `INSERT INTO datasets (dataset_id, company_id, uploaded_by, dataset_name, file_name, file_size, upload_status)
+        `INSERT INTO datasets (dataset_id, company_id, uploaded_by, dataset_name, name, hash, upload_status)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [
           datasetId,
@@ -43,7 +44,7 @@ export const uploadDataset = async (req, res) => {
           uploadedBy,
           req.file.originalname,
           req.file.originalname,
-          req.file.size || null,
+          fileHash,
           "processing",
         ]
       );
