@@ -93,6 +93,34 @@ export default function EmployeeLogin() {
         }
         setError("");
         setLoading(true);
+
+        /* 
+         * ==========================================
+         * DEMO / STANDALONE MODE BYPASS
+         * ==========================================
+         * ATTENTION: Remove or comment out this block and uncomment the 
+         * axios block below before production deployment!
+         */
+        if (email === "user@demo.com" && password === "demo123") {
+            const demoRole = "employee";
+            const demoName = "Employee User";
+            
+            sessionStorage.setItem("token", "demo-token");
+            sessionStorage.setItem("role", demoRole);
+            sessionStorage.setItem("userName", demoName);
+            sessionStorage.setItem("userEmail", email);
+
+            setUserData({ name: demoName, email: email, role: demoRole });
+            setLoginSuccess(true);
+            setLoading(false);
+            return;
+        }
+
+        /* 
+         * PRODUCTION LOGIN BLOCK (Disabled for demo)
+         * Uncomment this section once the backend is ready.
+         */
+        /*
         try {
             const res = await axios.post("http://localhost:5000/api/auth/login", {
                 email,
@@ -129,6 +157,11 @@ export default function EmployeeLogin() {
             }
             setLoading(false);
         }
+        */
+
+        // For now, if not the demo account, show a friendly mock error
+        setError("Demo Mode: Please use user@demo.com (pass: demo123)");
+        setLoading(false);
     };
 
     const handleKeyDown = (e) => {

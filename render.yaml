@@ -1,0 +1,12 @@
+services:
+  - type: static
+    name: data-insights-frontend
+    env: static
+    # Standard Vite build command
+    buildCommand: npm install && npm run build
+    # Directory where Vite generates the production build
+    publishPath: frontend-react/dist
+    routes:
+      # SPA rewrite rule: Redirect all requests to index.html to handle client-side routing
+      - source: /*
+        destination: /index.html

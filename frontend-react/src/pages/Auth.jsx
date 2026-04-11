@@ -86,6 +86,34 @@ export default function Auth() {
         }
         setError("");
         setLoading(true);
+
+        /* 
+         * ==========================================
+         * DEMO / STANDALONE MODE BYPASS
+         * ==========================================
+         * ATTENTION: Remove or comment out this block and uncomment the 
+         * axios block below before production deployment!
+         */
+        if ((email === "admin@demo.com" || email === "user@demo.com") && password === "demo123") {
+            const demoRole = email === "admin@demo.com" ? "admin" : "employee";
+            const demoName = demoRole === "admin" ? "Admin Demo" : "Employee User";
+            
+            sessionStorage.setItem("token", "demo-token");
+            sessionStorage.setItem("role", demoRole);
+            sessionStorage.setItem("userName", demoName);
+            sessionStorage.setItem("userEmail", email);
+
+            setUserData({ name: demoName, email: email, role: demoRole });
+            setLoginSuccess(true);
+            setLoading(false);
+            return;
+        }
+
+        /* 
+         * PRODUCTION LOGIN BLOCK (Disabled for demo)
+         * Uncomment this section once the backend is ready.
+         */
+        /*
         try {
             const res = await axios.post("http://localhost:5000/api/auth/login", {
                 email,
@@ -113,15 +141,13 @@ export default function Auth() {
             });
             setLoginSuccess(true);
             setLoading(false);
-        } catch (err) {
-            const msg = err.response?.data?.message || "Invalid credentials. Please try again.";
-            if (err.response?.data?.pending) {
-                setError("Your account is pending approval. Please contact your administrator to activate your account.");
-            } else {
-                setError(msg);
-            }
             setLoading(false);
         }
+        */
+
+        // For now, if not the demo account, show a friendly mock error
+        setError("Demo Mode: Please use admin@demo.com or user@demo.com (pass: demo123)");
+        setLoading(false);
     };
 
     const handleKeyDown = (e) => {
