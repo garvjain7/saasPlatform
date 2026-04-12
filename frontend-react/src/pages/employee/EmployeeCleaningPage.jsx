@@ -455,12 +455,14 @@ const EmployeeCleaningPage = () => {
     document.body.removeChild(link);
     
     // Log cleaning activity asynchronously
-    cleanDataset(dsId).catch(err => console.warn("Failed to log download activity:", err));
+    const detail = `Data cleaning completed: Handled ${totNulls} nulls, ${totDupes} duplicate rows. Downloaded CSV.`;
+    cleanDataset(dsId, detail).catch(err => console.warn("Failed to log download activity:", err));
   };
 
   const handleProceedToViz = async () => {
     try {
-      await cleanDataset(dsId);
+      const detail = `Data cleaning completed: Handled ${totNulls} nulls, ${totDupes} duplicate rows, adjusted data types.`;
+      await cleanDataset(dsId, detail);
     } catch (err) {
       console.warn("Failed to log visualization proceed activity:", err);
     }

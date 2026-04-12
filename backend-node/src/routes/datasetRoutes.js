@@ -62,7 +62,8 @@ router.post("/datasets/:id/clean", protect, async (req, res) => {
       }
       
       const userName = userEmail?.split('@')[0] || 'Unknown';
-      await logCleaningActivity(userId, userName, userEmail, datasetId, datasetName, 'pending', 'Data cleaning initiated');
+      let detail = req.body?.detail || 'Data cleaning initiated';
+      await logCleaningActivity(userId, userName, userEmail, datasetId, datasetName, 'completed', detail);
     } catch (e) {
       console.error("Error logging cleaning activity:", e);
     }
