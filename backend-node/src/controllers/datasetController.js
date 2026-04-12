@@ -12,8 +12,8 @@ export function mapDatasetRow(row) {
   return {
     ...row,
     name: row.dataset_name,
-    filename: row.file_name,
-    status: row.upload_status,
+    filename: row.file_name || row.name,
+    status: row.upload_status || row.status,
     size: row.file_size,
     uploaded_by: row.uploaded_by_name || row.uploaded_by_email || row.uploaded_by,
     rows_count: schema.rows_count ?? schema.total_rows ?? null,

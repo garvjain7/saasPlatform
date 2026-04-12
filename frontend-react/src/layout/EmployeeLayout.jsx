@@ -7,6 +7,7 @@ import '../styles/Employee.css';
 const navItems = [
   { path: '/employee/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/employee/datasets', label: 'Datasets', icon: Database },
+  { path: '/employee/upload', label: 'Upload Data', icon: Upload },
   { path: '/employee/cleaning', label: 'Clean', icon: Sparkles },
   { path: '/employee/visualization', label: 'Visualize', icon: BarChart3 },
   { path: '/employee/chat', label: 'Chatbot', icon: MessageSquare },
@@ -16,6 +17,19 @@ const navItems = [
 const EmployeeLayout = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
+<<<<<<< HEAD
+  const [userName, setUserName] = useState(() => {
+    const val = localStorage.getItem('userName');
+    return (val && val !== 'undefined' && val !== 'null') ? val : 'Employee';
+  });
+  const safeName = userName || 'Employee';
+  const userInitials = safeName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+
+  useEffect(() => {
+    getMe().then(user => {
+      if (user) {
+        setUserName(user.name || user.full_name || user.email?.split('@')[0] || 'Employee');
+=======
   const [userName, setUserName] = useState(sessionStorage.getItem('userName') || 'Employee');
   
   // Safe parsing to prevent application crashes if userName gets resolved as null from backend
@@ -28,6 +42,7 @@ const EmployeeLayout = ({ children }) => {
         setUserName(user.name);
       } else if (user && user.email) {
         setUserName(user.email.split('@')[0]);
+>>>>>>> upstream/feature
       }
     });
   }, []);

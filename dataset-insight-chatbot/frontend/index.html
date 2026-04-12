@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dataset Insight Bot</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#fff;--bg2:#f5f5f3;--bg3:#eeecea;--text:#1a1a18;--muted:#6b6b67;--hint:#9b9b96;--border:#dedad4;
+  --r:10px;--rs:6px;
+  --info-bg:#e6f1fb;--info-tx:#0c447c;
+  --succ-bg:#e1f5ee;--succ-tx:#085041;
+  --warn-bg:#faeeda;--warn-tx:#633806;
+  --danger-bg:#fcebeb;--danger-tx:#791f1f;
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#1e1e1c;--bg2:#262624;--bg3:#2e2e2b;--text:#e4e2d8;--muted:#9b9b96;--hint:#6b6b67;--border:#3a3a36;
+  --info-bg:#042c53;--info-tx:#b5d4f4;--succ-bg:#04342c;--succ-tx:#9fe1cb;
+  --warn-bg:#412402;--warn-tx:#fac775;--danger-bg:#501313;--danger-tx:#f7c1c1;
+}}
+body{font-family:system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.6;
+  background:var(--bg3);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── Login overlay */
+#login-overlay{position:fixed;inset:0;background:var(--bg3);display:flex;
+  align-items:center;justify-content:center;z-index:999}
+.login-box{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);
+  padding:36px 32px;width:360px}
+.login-box h2{font-size:20px;font-weight:600;margin-bottom:4px}
+.login-box p{font-size:13px;color:var(--muted);margin-bottom:24px}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.form-group input{width:100%;padding:9px 12px;border:1px solid var(--border);
+  border-radius:var(--rs);background:var(--bg2);color:var(--text);font-size:14px;
+  outline:none;font-family:inherit}
+.form-group input:focus{border-color:var(--muted)}
+.btn-primary{width:100%;padding:10px;background:var(--text);color:var(--bg);border:none;
+  border-radius:var(--rs);font-size:14px;font-weight:500;cursor:pointer;font-family:inherit}
+.btn-primary:hover{opacity:.85}
+#login-error{display:none;margin-top:12px;padding:8px 12px;background:var(--danger-bg);
+  color:var(--danger-tx);border-radius:var(--rs);font-size:13px}
+
+/* ── Header */
+#header{background:var(--bg);border-bottom:1px solid var(--border);padding:10px 20px;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;flex-shrink:0}
+.logo{font-size:15px;font-weight:600;letter-spacing:-.3px}
+.logo span{color:var(--muted);font-weight:400;font-size:13px}
+.header-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#model-toggle{display:flex;border:1px solid var(--border);border-radius:var(--rs);overflow:hidden;font-size:12px}
+.model-btn{padding:5px 12px;cursor:pointer;background:transparent;border:none;
+  color:var(--muted);font-size:12px;transition:.15s;font-family:inherit}
+.model-btn.active{background:var(--bg2);color:var(--text);font-weight:500}
+.role-badge{font-size:11px;padding:4px 10px;border-radius:20px;font-weight:600;border:1px solid var(--border)}
+.role-admin   {background:var(--danger-bg);color:var(--danger-tx)}
+.role-analyst {background:var(--info-bg);color:var(--info-tx)}
+.role-employee{background:var(--succ-bg);color:var(--succ-tx)}
+.role-viewer  {background:var(--warn-bg);color:var(--warn-tx)}
+#user-name-badge{font-size:13px;color:var(--muted)}
+.btn-sm{font-size:12px;padding:5px 12px;border:1px solid var(--border);border-radius:var(--rs);
+  cursor:pointer;background:transparent;color:var(--muted);font-family:inherit}
+.btn-sm:hover{color:var(--text)}
+
+/* ── Layout */
+.layout{display:flex;flex:1;overflow:hidden}
+aside{width:280px;background:var(--bg);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;padding:16px;gap:14px;overflow-y:auto;flex-shrink:0}
+.section-label{font-size:11px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.6px}
+
+/* Upload */
+.upload-zone{border:1.5px dashed var(--border);border-radius:var(--r);padding:18px 12px;
+  text-align:center;cursor:pointer;color:var(--muted);font-size:13px;transition:.2s;display:block}
+.upload-zone:hover{border-color:var(--text);color:var(--text)}
+.upload-zone input{display:none}
+.no-upload-msg{font-size:12px;color:var(--hint);padding:10px;text-align:center;
+  border:1px solid var(--border);border-radius:var(--rs)}
+
+/* Status */
+#status-bar{display:none;align-items:center;gap:7px;font-size:12px;color:var(--muted);
+  padding:6px 8px;background:var(--bg2);border-radius:var(--rs);border:1px solid var(--border)}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--border)}
+.dot.ok{background:#1D9E75}.dot.err{background:#E24B4A}
+.dot.loading{background:#EF9F27;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* Schema */
+#schema-section{display:none}
+.schema-col{border:1px solid var(--border);border-radius:var(--rs);padding:8px 10px;margin-bottom:6px;font-size:12px}
+.col-name{font-weight:600;font-size:13px;margin-bottom:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.col-meta{color:var(--muted);font-size:11px;line-height:1.5}
+.badge{font-size:10px;padding:1px 7px;border-radius:20px;font-weight:600}
+.b-num{background:var(--info-bg);color:var(--info-tx)}
+.b-cat{background:var(--succ-bg);color:var(--succ-tx)}
+.b-dt {background:var(--warn-bg);color:var(--warn-tx)}
+
+/* Download btn */
+#download-btn{display:none;width:100%;padding:7px;font-size:12px;border:1px solid var(--border);
+  border-radius:var(--rs);cursor:pointer;background:var(--bg2);color:var(--muted);font-family:inherit}
+#download-btn:hover{color:var(--text)}
+
+/* Main chat */
+main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+#chat{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:14px}
+.empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;color:var(--muted);text-align:center;padding:24px;font-size:14px}
+.empty-icon{font-size:40px}
+.chips{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:6px}
+.chip{font-size:12px;padding:6px 14px;border:1px solid var(--border);border-radius:20px;
+  cursor:pointer;color:var(--muted);background:var(--bg);transition:.15s;font-family:inherit}
+.chip:hover{color:var(--text);border-color:var(--muted)}
+
+/* Messages */
+.msg{display:flex;flex-direction:column;max-width:78%}
+.msg.user{align-self:flex-end;align-items:flex-end}
+.msg.bot {align-self:flex-start;align-items:flex-start}
+.bubble{padding:11px 15px;border-radius:var(--r);font-size:14px;line-height:1.65;word-break:break-word;white-space:pre-wrap}
+.msg.user .bubble{background:var(--bg2);border:1px solid var(--border)}
+.msg.bot  .bubble{background:var(--bg);border:1px solid var(--border)}
+.blocked-bubble{background:var(--danger-bg);color:var(--danger-tx);border-color:var(--danger-bg)}
+.modified-bubble{background:var(--succ-bg);color:var(--succ-tx);border-color:var(--succ-bg)}
+
+/* Code block */
+.code-wrap{margin-top:8px;width:100%}
+.code-label{font-size:10px;font-weight:600;color:var(--hint);text-transform:uppercase;
+  letter-spacing:.5px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between}
+.copy-btn{font-size:10px;padding:2px 8px;border:1px solid var(--border);border-radius:4px;
+  cursor:pointer;background:var(--bg2);color:var(--muted);font-family:inherit}
+.copy-btn:hover{color:var(--text)}
+.code-block{background:var(--bg2);border:1px solid var(--border);border-radius:var(--rs);
+  padding:10px 12px;font-family:'SFMono-Regular',Consolas,monospace;font-size:12px;
+  white-space:pre-wrap;color:var(--muted);overflow-x:auto}
+
+.error-block{margin-top:6px;padding:8px 12px;background:var(--danger-bg);
+  color:var(--danger-tx);border-radius:var(--rs);font-size:12px;width:100%}
+.msg-meta{font-size:11px;color:var(--hint);margin-top:4px;padding:0 4px}
+
+/* Typing */
+.typing-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--muted);
+  margin:0 2px;animation:tdot .9s infinite}
+.typing-dot:nth-child(2){animation-delay:.15s}.typing-dot:nth-child(3){animation-delay:.3s}
+@keyframes tdot{0%,60%,100%{opacity:.2}30%{opacity:1}}
+
+/* Privacy note */
+#privacy-note{display:none;padding:5px 16px;font-size:11px;text-align:center;
+  border-top:1px solid var(--border);border-bottom:1px solid var(--border);flex-shrink:0}
+#privacy-note.groq  {background:var(--succ-bg);color:var(--succ-tx)}
+#privacy-note.ollama{background:var(--info-bg);color:var(--info-tx)}
+#privacy-note.openai{background:var(--warn-bg);color:var(--warn-tx)}
+
+/* Input */
+#input-row{padding:12px 16px;display:flex;gap:8px;align-items:flex-end;
+  background:var(--bg);border-top:1px solid var(--border);flex-shrink:0}
+#prompt{flex:1;resize:none;padding:9px 13px;font-size:14px;border:1px solid var(--border);
+  border-radius:var(--r);background:var(--bg2);color:var(--text);font-family:inherit;
+  line-height:1.5;max-height:120px;outline:none;transition:border-color .15s}
+#prompt:focus{border-color:var(--muted)}
+#send-btn{padding:9px 20px;background:var(--text);color:var(--bg);border:none;
+  border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;
+  font-family:inherit;white-space:nowrap}
+#send-btn:disabled{opacity:.35;cursor:not-allowed}
+#send-btn:hover:not(:disabled){opacity:.85}
+
+/* Permission banner */
+#perm-banner{display:none;padding:8px 16px;font-size:12px;text-align:center;
+  background:var(--warn-bg);color:var(--warn-tx);border-bottom:1px solid var(--border);flex-shrink:0}
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN OVERLAY ── -->
+<div id="login-overlay">
+  <div class="login-box">
+    <h2>Sign in</h2>
+    <p>Dataset Insight Bot</p>
+    <div class="form-group">
+      <label>Email</label>
+      <input id="login-email" type="email" placeholder="you@company.com" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input id="login-password" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn-primary" onclick="doLogin()">Sign in</button>
+    <div id="login-error"></div>
+  </div>
+</div>
+
+<!-- ── HEADER ── -->
+<div id="header">
+  <div class="logo">Dataset Insight Bot <span id="header-sub">· schema-only LLM pipeline</span></div>
+  <div class="header-right">
+    <div id="model-toggle">
+      <button class="model-btn active" onclick="setModel('groq')">Groq (free)</button>
+      <button class="model-btn" onclick="setModel('openai')">OpenAI</button>
+      <button class="model-btn" onclick="setModel('ollama')">Ollama (local)</button>
+    </div>
+    <span id="user-name-badge" style="display:none"></span>
+    <span id="role-badge" class="role-badge" style="display:none"></span>
+    <button class="btn-sm" id="logout-btn" style="display:none" onclick="doLogout()">Sign out</button>
+  </div>
+</div>
+
+<!-- ── PERMISSION BANNER ── -->
+<div id="perm-banner" id="perm-banner"></div>
+
+<!-- ── LAYOUT ── -->
+<div class="layout">
+  <aside>
+    <div>
+      <div class="section-label" style="margin-bottom:8px">Dataset</div>
+      <label class="upload-zone" id="upload-zone">
+        <input type="file" id="file-input" accept=".csv,.tsv,.json,.xlsx,.xls,.txt" onchange="uploadFile(this)">
+        <div style="font-size:22px;margin-bottom:6px">⬆</div>
+        <div>Drop or click to upload</div>
+        <div style="font-size:11px;margin-top:4px;color:var(--hint)">CSV · TSV · JSON · Excel</div>
+      </label>
+      <div class="no-upload-msg" id="no-upload-msg" style="display:none">
+        Contact admin to upload datasets
+      </div>
+    </div>
+
+    <div id="status-bar">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-text" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    </div>
+
+    <button id="download-btn" onclick="downloadDataset()">⬇ Download CSV</button>
+
+    <div id="schema-section">
+      <div class="section-label" style="margin-bottom:8px">Schema</div>
+      <div id="schema-panel"></div>
+    </div>
+  </aside>
+
+  <main>
+    <div id="chat">
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon">📊</div>
+        <div style="font-size:15px;font-weight:500;color:var(--text)">Upload a dataset to begin</div>
+        <div>Ask questions in plain English — or ask to edit the data</div>
+        <div class="chips" id="suggestion-chips">
+          <button class="chip" onclick="quickAsk('Summarize this dataset')">Summarize</button>
+          <button class="chip" onclick="quickAsk('How many null values are there?')">Null values</button>
+          <button class="chip" onclick="quickAsk('Average of all numeric columns')">Averages</button>
+          <button class="chip" onclick="quickAsk('Show top 5 values in each column')">Top values</button>
+          <button class="chip" onclick="quickAsk('What are the most correlated columns?')">Correlations</button>
+        </div>
+        <div class="chips" id="edit-chips" style="display:none">
+          <button class="chip" onclick="quickAsk('Fill all null values in Gender column with M')">Fill nulls</button>
+          <button class="chip" onclick="quickAsk('Drop rows where LoanAmount is null')">Drop null rows</button>
+          <button class="chip" onclick="quickAsk('Convert Loan_Status Y to 1 and N to 0')">Encode column</button>
+          <button class="chip" onclick="quickAsk('Add a new column LoanCategory: High if LoanAmount > 200 else Low')">Add column</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="privacy-note"></div>
+
+    <div id="input-row">
+      <textarea id="prompt" rows="1" placeholder="Ask about your data, or ask to edit it..."
+        onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+      <button id="send-btn" disabled onclick="sendQuery()">Send</button>
+    </div>
+  </main>
+</div>
+
+<script>
+const API = 'http://localhost:8000';
+let model = 'groq', datasetId = null, busy = false;
+let authToken = localStorage.getItem('token');
+let currentUser = JSON.parse(localStorage.getItem('user') || 'null');
+
+// ── Boot
+window.onload = () => {
+  if (authToken && currentUser) { showApp(); }
+  else { document.getElementById('login-overlay').style.display = 'flex'; }
+};
+
+// ── Login
+async function doLogin() {
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl    = document.getElementById('login-error');
+  errEl.style.display = 'none';
+  if (!email || !password) { showLoginError('Please enter email and password.'); return; }
+  try {
+    const r = await fetch(`${API}/auth/login`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email, password})
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail||'Login failed'); }
+    const data = await r.json();
+    authToken   = data.token;
+    currentUser = {sub:data.sub, email:data.email, role:data.role,
+                   all_roles:data.all_roles, name:data.name, company_id:data.company_id};
+    localStorage.setItem('token', authToken);
+    localStorage.setItem('user', JSON.stringify(currentUser));
+    showApp();
+  } catch(e) { showLoginError(e.message); }
+}
+
+function showLoginError(msg) {
+  const el = document.getElementById('login-error');
+  el.style.display = 'block'; el.textContent = msg;
+}
+
+function showApp() {
+  document.getElementById('login-overlay').style.display = 'none';
+  const role = currentUser.role;
+  const name = currentUser.name || currentUser.email;
+
+  // User badge
+  document.getElementById('user-name-badge').style.display = 'inline';
+  document.getElementById('user-name-badge').textContent = name;
+  document.getElementById('logout-btn').style.display = 'inline-block';
+
+  // Role badge
+  const rb = document.getElementById('role-badge');
+  rb.style.display = 'inline'; rb.textContent = role;
+  rb.className = `role-badge role-${role}`;
+
+  // Upload visibility
+  const canUpload = role === 'admin' || role === 'analyst';
+  document.getElementById('upload-zone').style.display   = canUpload ? 'block' : 'none';
+  document.getElementById('no-upload-msg').style.display = canUpload ? 'none'  : 'block';
+
+  // Edit chips for admin only
+  if (role === 'admin') {
+    document.getElementById('edit-chips').style.display = 'flex';
+  }
+
+  // Permission banner
+  const banner = document.getElementById('perm-banner');
+  if (role === 'viewer') {
+    banner.style.display = 'block';
+    banner.textContent = 'Viewer mode — you can see the dashboard only. Contact your admin for data access.';
+    document.getElementById('send-btn').disabled = true;
+    document.getElementById('prompt').placeholder = 'Viewer role — no query access';
+  } else if (role === 'employee') {
+    banner.style.display = 'block';
+    banner.textContent = 'Employee mode — you can query data but cannot modify it.';
+  }
+
+  // Header subtitle
+  document.getElementById('header-sub').textContent = ` · ${role} access`;
+  updatePrivacyNote();
+}
+
+function doLogout() {
+  authToken = null; currentUser = null;
+  localStorage.removeItem('token'); localStorage.removeItem('user');
+  location.reload();
+}
+
+// ── Model toggle
+function setModel(m) {
+  model = m;
+  document.querySelectorAll('.model-btn').forEach(b => {
+    b.classList.toggle('active',
+      (m==='groq'&&b.textContent.includes('Groq'))||
+      (m==='openai'&&b.textContent.includes('OpenAI'))||
+      (m==='ollama'&&b.textContent.includes('Ollama')));
+  });
+  updatePrivacyNote();
+}
+
+function updatePrivacyNote() {
+  const n = document.getElementById('privacy-note');
+  if (!datasetId) { n.style.display='none'; return; }
+  n.style.display = 'block'; n.className = model;
+  const msgs = {
+    groq:   '⚡ Groq mode — only schema sent to API. Raw data stays on your server.',
+    openai: '☁ OpenAI mode — only schema metadata sent. Raw data never leaves.',
+    ollama: '🔒 Ollama mode — fully local. Nothing leaves your machine.'
+  };
+  n.textContent = msgs[model] || '';
+}
+
+// ── File upload
+async function uploadFile(input) {
+  const file = input.files[0]; if (!file) return;
+  setStatus('Uploading ' + file.name + '…', 'loading');
+  const fd = new FormData(); fd.append('file', file);
+  try {
+    const r = await fetch(`${API}/upload`, {
+      method:'POST', headers:{'Authorization':`Bearer ${authToken}`}, body: fd
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail||r.statusText); }
+    const data = await r.json();
+    datasetId = data.dataset_id;
+    setStatus(file.name, 'ok');
+    renderSchema(data.schema);
+    document.getElementById('send-btn').disabled = false;
+    document.getElementById('empty-state')?.remove();
+    updatePrivacyNote();
+
+    // Show download for admin/analyst
+    if (currentUser.role === 'admin' || currentUser.role === 'analyst') {
+      document.getElementById('download-btn').style.display = 'block';
+    }
+
+    const cols = Object.keys(data.schema.columns).length;
+    addMessage('bot',
+      `Dataset loaded: **${file.name}**\n${data.schema.row_count.toLocaleString()} rows · ${cols} columns\n\n` +
+      (currentUser.role === 'admin'
+        ? 'You have full access — ask questions or ask me to edit the data.'
+        : 'Ask me anything about this data.')
+    );
+  } catch(e) {
+    setStatus('Upload failed: ' + e.message, 'err');
+    addMessage('bot', `Upload failed: ${e.message}`);
+  }
+}
+
+function setStatus(text, state) {
+  const bar = document.getElementById('status-bar');
+  bar.style.display = 'flex';
+  document.getElementById('status-dot').className = 'dot ' + state;
+  document.getElementById('status-text').textContent = text;
+}
+
+function renderSchema(schema) {
+  document.getElementById('schema-section').style.display = 'block';
+  const panel = document.getElementById('schema-panel');
+  panel.innerHTML = Object.entries(schema.columns).map(([col, info]) => {
+    const bc = info.type==='numeric'?'b-num':info.type==='datetime'?'b-dt':'b-cat';
+    let meta = '';
+    if (info.type==='numeric')
+      meta = `min <strong>${info.min}</strong> · max <strong>${info.max}</strong> · mean <strong>${info.mean}</strong>`;
+    else if (info.type==='datetime')
+      meta = `${esc(info.min)} → ${esc(info.max)}`;
+    else {
+      const tops = (info.top_values||[]).slice(0,3).map(v=>`<em>${esc(String(v))}</em>`).join(', ');
+      meta = `${info.unique_count} unique · top: ${tops}`;
+    }
+    if (info.null_count > 0) meta += ` · <span style="color:var(--danger-tx)">${info.null_count} nulls</span>`;
+    return `<div class="schema-col">
+      <div class="col-name">${esc(col)}<span class="badge ${bc}">${info.type}</span></div>
+      <div class="col-meta">${meta}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Send query
+async function sendQuery() {
+  if (busy || !datasetId) return;
+  const ta = document.getElementById('prompt');
+  const question = ta.value.trim(); if (!question) return;
+  ta.value = ''; ta.style.height = 'auto';
+  addMessage('user', question);
+  busy = true; document.getElementById('send-btn').disabled = true;
+  const typing = addTyping();
+  try {
+    const r = await fetch(`${API}/query`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${authToken}`},
+      body: JSON.stringify({dataset_id:datasetId, question, model})
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail||r.statusText); }
+    const data = await r.json();
+    typing.remove();
+
+    const isBlocked  = data.allowed === false;
+    const isModified = data.modified === true;
+
+    addMessage('bot', data.answer, data.code, data.error, isBlocked, isModified);
+
+    // If dataset was modified, refresh schema
+    if (isModified) refreshSchema();
+  } catch(e) {
+    typing.remove();
+    addMessage('bot', `Something went wrong: ${e.message}`);
+  }
+  busy = false; document.getElementById('send-btn').disabled = false;
+}
+
+async function refreshSchema() {
+  try {
+    const r = await fetch(`${API}/datasets`, {headers:{'Authorization':`Bearer ${authToken}`}});
+    const data = await r.json();
+    const ds = data.datasets.find(d => d.dataset_id === datasetId);
+    if (ds && ds.schema_json) renderSchema(typeof ds.schema_json==='string'?JSON.parse(ds.schema_json):ds.schema_json);
+  } catch(e) {}
+}
+
+// ── Message renderer
+function addMessage(role, text, code, error, blocked=false, modified=false) {
+  const chat = document.getElementById('chat');
+  const div  = document.createElement('div');
+  div.className = `msg ${role==='user'?'user':'bot'}`;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble' + (blocked?' blocked-bubble':modified?' modified-bubble':'');
+  bubble.innerHTML = esc(text).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+  div.appendChild(bubble);
+
+  if (code) {
+    const wrap = document.createElement('div'); wrap.className = 'code-wrap';
+    const label = document.createElement('div'); label.className = 'code-label';
+    label.innerHTML = '<span>Generated pandas query</span>';
+    const copyBtn = document.createElement('button'); copyBtn.className = 'copy-btn';
+    copyBtn.textContent = 'Copy';
+    copyBtn.onclick = () => { navigator.clipboard.writeText(code); copyBtn.textContent='Copied!'; setTimeout(()=>copyBtn.textContent='Copy',1500); };
+    label.appendChild(copyBtn);
+    const codeEl = document.createElement('div'); codeEl.className = 'code-block';
+    codeEl.textContent = code;
+    wrap.appendChild(label); wrap.appendChild(codeEl); div.appendChild(wrap);
+  }
+
+  if (error) {
+    const errEl = document.createElement('div'); errEl.className = 'error-block';
+    errEl.textContent = '⚠ ' + error; div.appendChild(errEl);
+  }
+
+  const meta = document.createElement('div'); meta.className = 'msg-meta';
+  meta.textContent = role==='user'?'you':`via ${model} · ${currentUser.role}`;
+  div.appendChild(meta);
+
+  chat.appendChild(div); chat.scrollTop = chat.scrollHeight;
+  return div;
+}
+
+function addTyping() {
+  const chat = document.getElementById('chat');
+  const div  = document.createElement('div'); div.className = 'msg bot';
+  div.innerHTML = `<div class="bubble" style="padding:14px 16px">
+    <span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>
+  </div>`;
+  chat.appendChild(div); chat.scrollTop = chat.scrollHeight;
+  return div;
+}
+
+// ── Download
+function downloadDataset() {
+  if (!datasetId) return;
+  fetch(`${API}/download/${datasetId}`, {headers:{'Authorization':`Bearer ${authToken}`}})
+    .then(r => r.blob())
+    .then(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'dataset.csv'; a.click();
+    });
+}
+
+// ── Helpers
+function quickAsk(q) { if(!datasetId)return; document.getElementById('prompt').value=q; sendQuery(); }
+function handleKey(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendQuery();} }
+function autoResize(el) { el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,120)+'px'; }
+function esc(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
