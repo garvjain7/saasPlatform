@@ -14,12 +14,27 @@ export const askQuestion = async (req, res) => {
   }
 
   try {
-    const userRes = await pool.query("SELECT user_id, role FROM users WHERE email = $1", [userEmail]);
+    const userRes = await pool.query("SELECT user_id, role, company_id FROM users WHERE email = $1", [userEmail]);
     const user = userRes.rows[0];
     if (!user) return res.status(401).json({ success: false, message: "User not found" });
 
     // 1. Permission Check
-    if (!(await validateDatasetAccess(user.user_id, datasetId, user.role))) {
+    // Get granular permissions from database
+    let granularPerms = { can_view: false, can_edit: false, can_query: false };
+    
+    if (user.role === 'admin') {
+      granularPerms = { can_view: true, can_edit: true, can_query: true };
+    } else {
+      const permRes = await pool.query(
+        "SELECT can_view, can_edit, can_query FROM permissions WHERE user_id = $1 AND dataset_id = $2",
+        [user.user_id, datasetId]
+      );
+      if (permRes.rows.length > 0) {
+        granularPerms = permRes.rows[0];
+      }
+    }
+
+    if (!granularPerms.can_view && !granularPerms.can_query) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have access to this dataset" });
     }
 
@@ -43,8 +58,8 @@ export const askQuestion = async (req, res) => {
       });
     }
 
-    // 3. Spawn Python Query Engine — pass explicit csv_file for correct data loading
-    const pythonScript = path.resolve(process.cwd(), "..", "ml_engine", "pipeline", "query_engine.py");
+    // 3. Spawn Python Cognitive Engine — pass explicit csv_file and granular permissions
+    const pythonScript = path.resolve(process.cwd(), "..", "ml_engine", "pipeline", "cognitive_engine.py");
 
     const pyProcess = spawn("python", [
       pythonScript,
@@ -52,25 +67,60 @@ export const askQuestion = async (req, res) => {
       "--dataset_id", datasetId,
       "--question",   queryText,
       "--dataset_dir", path.dirname(csvFilePath),
-      "--csv_file",   csvFilePath,   // ← explicit file path, no guessing
+      "--csv_file",   csvFilePath,
+      "--permissions", JSON.stringify(granularPerms)
     ]);
+    
+    const startTimeMs = Date.now();
 
     let stdout = "";
     let stderr = "";
     pyProcess.stdout.on("data", (data) => (stdout += data.toString()));
     pyProcess.stderr.on("data", (data) => (stderr += data.toString()));
 
-    pyProcess.on("close", (code) => {
-      if (stderr) console.warn(`[query_engine stderr]: ${stderr.slice(0, 500)}`);
+    pyProcess.on("close", async (code) => {
+      if (stderr) console.warn(`[query_engine stderr]: ${stderr}`);
       if (code !== 0) {
         console.error(`[query_engine] exited with code ${code}`);
         return res.json({ success: true, source: "fallback", answer: "The query engine encountered an error. Please try rephrasing your question." });
       }
       try {
         const result = JSON.parse(stdout.trim());
+        const duration = Date.now() - startTimeMs;
+        
+        // Log deep AI query metrics into query_logs
+        try {
+          await pool.query(
+            "INSERT INTO query_logs (company_id, user_id, dataset_id, query_text, query_type, execution_time_ms, status, generated_code, error_msg) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+            [
+              user.company_id || null, 
+              user.user_id, 
+              datasetId, 
+              queryText, 
+              result.intent || 'unknown',
+              duration,
+              result.success === false ? "failed" : "success",
+              result.generated_code || null,
+              result.error || null
+            ]
+          );
+        } catch (dbErr) {
+          console.error("Could not log deep AI query to query_logs:", dbErr);
+        }
+        
+        // Handle permission requests dynamically returned by python LLM
+        if (result.success === false && result.require_permission) {
+          return res.json({
+            success: false,
+            require_permission: result.require_permission,
+            answer: result.answer,
+            intent: result.intent
+          });
+        }
+
         return res.json({
           success: true,
-          source: "ml-engine",
+          source: result.fallback_used ? "ml-engine-fallback" : "ml-engine",
           answer: result.answer || "I couldn't find an answer.",
           intent: result.intent,
           confidence: result.confidence

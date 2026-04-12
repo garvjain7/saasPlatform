@@ -7,14 +7,15 @@ import { pool } from "../config/db.js";
 
 const router = express.Router();
 
-const wrapWithActivity = (handler) => {
+    const wrapWithActivity = (handler) => {
   return async (req, res) => {
     const startTime = Date.now();
     const datasetId = req.body.datasetId;
+    const userEmail = req.user?.email;  // Hoisted to outer scope
     
     try {
-      const userId = req.user?.userId || req.user?.email;
-      const userEmail = req.user?.email;
+      // Use user_id for valid UUID in postgres, fallback cautiously
+      const userId = req.user?.user_id || req.user?.userId;
       
       let userName = userEmail?.split('@')[0] || 'Unknown';
       let datasetName = datasetId;

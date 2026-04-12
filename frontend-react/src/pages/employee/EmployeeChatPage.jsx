@@ -48,6 +48,12 @@ function getResponse(q) {
 
 function buildResponseHTML(r) {
   let html = `<div style="margin-bottom:10px">${r.text}</div>`;
+  if (r.require_permission) {
+    html += `<div style="margin-top:12px;padding:12px;background:rgba(210,153,34,0.1);border:1px solid rgba(210,153,34,0.4);border-radius:8px;text-align:center;">
+      <div style="font-size:12px;color:var(--warning);margin-bottom:8px">You need <strong>${r.require_permission}</strong> access to perform this operation.</div>
+      <button onclick="alert('Access request for ${r.require_permission} sent to Admin! It will appear in their logs.')" style="background:var(--warning);color:#000;border:none;padding:6px 12px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">Request Access</button>
+    </div>`;
+  }
   if (r.table) {
     html += `<div style="margin-top:8px;border-radius:8px;overflow:hidden;border:1px solid rgba(48,54,61,0.8)"><table style="width:100%;border-collapse:collapse;font-family:monospace;font-size:11px"><thead><tr>${r.table.cols.map(c => `<th style="background:rgba(13,17,23,0.95);padding:7px 10px;text-align:left;color:#8b949e;font-size:9px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid rgba(48,54,61,0.8)">${c}</th>`).join('')}</tr></thead><tbody>${r.table.rows.map(row => `<tr>${row.map(c => `<td style="padding:7px 10px;border-bottom:1px solid rgba(48,54,61,0.4);color:#c9d1d9">${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
   }
@@ -170,7 +176,7 @@ const EmployeeChatPage = () => {
         }
         
         const bid = msgId.current++;
-        setMessages(prev => [...prev, { id: bid, role: 'ai', content: buildResponseHTML({ text: answer }), time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
+        setMessages(prev => [...prev, { id: bid, role: 'ai', content: buildResponseHTML({ text: answer, require_permission: response?.require_permission }), time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
       } else {
         // Fallback to mock response
         const r = getResponse(msg);
