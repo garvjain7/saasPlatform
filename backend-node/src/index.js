@@ -4,8 +4,6 @@ import dotenv from "dotenv";
 
 import connectDB, { pool } from "./config/db.js";
 import errorHandler from "./middleware/errorMiddleware.js";
-import "./queue/pipelineWorker.js";
-
 import analyticsRoutes from "./routes/analyticsRoutes.js";
 import visualizationRoutes from "./routes/visualizationRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";

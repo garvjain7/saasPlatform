@@ -4,7 +4,8 @@ import {
   getDatasetById,
   getDatasetStatus,
   updateDatasetStatus,
-  cleanDataset,
+  transformDataset,
+  finalizeDataset,
   trainDataset,
   getAnalysis,
   getMetrics,
@@ -57,31 +58,9 @@ router.get("/datasets/:id/download", protect, downloadDataset);
    ML PIPELINE AUTOMATION
 ===================================================== */
 
-// Clean dataset (Python script)
-router.post("/datasets/:id/clean", protect, async (req, res) => {
-  const datasetId = req.params.id;
-  const userId = req.user?.id || req.user?.email;
-  const userEmail = req.user?.email;
-  
-  if (userId && datasetId) {
-    try {
-      let datasetName = datasetId;
-      const dsResult = await pool.query(`SELECT dataset_name FROM datasets WHERE dataset_id = $1::uuid`, [
-        datasetId,
-      ]);
-      if (dsResult.rows.length > 0) {
-        datasetName = dsResult.rows[0].dataset_name || datasetName;
-      }
-      
-      const userName = userEmail?.split('@')[0] || 'Unknown';
-      await logCleaningActivity(userId, userName, userEmail, datasetId, datasetName, 'pending', 'Data cleaning initiated');
-    } catch (e) {
-      console.error("Error logging cleaning activity:", e);
-    }
-  }
-  
-  cleanDataset(req, res);
-});
+// Dataset Transformations (Workspace Model)
+router.post("/datasets/:id/transform", protect, transformDataset);
+router.post("/datasets/:id/finalize", protect, finalizeDataset);
 
 // Train ML model (Python script)
 router.post("/datasets/:id/train", protect, trainDataset);

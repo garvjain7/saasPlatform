@@ -1,6 +1,12 @@
 import path from "path";
 import fs from "fs/promises";
+import { createReadStream } from "fs";
+import { pool } from "../config/db.js";
+import { validateDatasetAccess, getDatasetPaths } from "../utils/accessUtils.js";
 
+// ─────────────────────────────────────────────
+// CSV Parser (handles quoted commas properly)
+// ─────────────────────────────────────────────
 const parseCSV = (csvText) => {
   const lines = csvText.trim().split("\n");
   if (lines.length < 2) return { headers: [], rows: [] };
@@ -31,143 +37,142 @@ const parseCSV = (csvText) => {
   return { headers, rows };
 };
 
+// ─────────────────────────────────────────────
+// Column Type + Stats Detection
+// ─────────────────────────────────────────────
 const detectColumnType = (rows, col) => {
-  let numCount = 0;
-  let dateCount = 0;
   const sample = Math.min(rows.length, 200);
+  let numCount = 0;
   for (let i = 0; i < sample; i++) {
     const val = rows[i][col];
-    if (val === "" || val === undefined || val === null) continue;
+    if (val === "" || val == null) continue;
     if (!isNaN(parseFloat(val)) && isFinite(val)) numCount++;
-    else if (!isNaN(Date.parse(val)) && /\d{4}[-/]\d{2}[-/]\d{2}/.test(val)) dateCount++;
   }
-  const threshold = sample * 0.6;
-  if (numCount > threshold) return "numeric";
-  if (dateCount > threshold) return "date";
-  return "categorical";
+  return numCount > sample * 0.6 ? "numeric" : "categorical";
 };
 
+const buildColumnStats = (rows, headers, columnTypes) => {
+  const columnStats = {};
+  headers.forEach((col) => {
+    const type = columnTypes[col];
+    if (type === "numeric") {
+      const vals = rows.map((r) => parseFloat(r[col])).filter((v) => !isNaN(v));
+      vals.sort((a, b) => a - b);
+      columnStats[col] = {
+        min: vals.length ? vals[0] : 0,
+        max: vals.length ? vals[vals.length - 1] : 0,
+        mean: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0,
+        count: vals.length,
+      };
+    } else {
+      const uniqueVals = [...new Set(rows.map((r) => r[col]).filter((v) => v !== ""))];
+      columnStats[col] = {
+        uniqueCount: uniqueVals.length,
+        values: uniqueVals.slice(0, 50),
+      };
+    }
+  });
+  return columnStats;
+};
+
+// ─────────────────────────────────────────────
+// Apply Filters + Search to Rows
+// ─────────────────────────────────────────────
+const applyFiltersAndSearch = (rows, headers, columnTypes, filters, search) => {
+  let filtered = rows;
+
+  Object.entries(filters).forEach(([col, filterVal]) => {
+    if (!headers.includes(col)) return;
+    const type = columnTypes[col];
+    if (type === "categorical") {
+      if (Array.isArray(filterVal) && filterVal.length > 0) {
+        const set = new Set(filterVal.map(String));
+        filtered = filtered.filter((r) => set.has(String(r[col])));
+      }
+    } else if (type === "numeric") {
+      if (filterVal.min !== undefined)
+        filtered = filtered.filter((r) => parseFloat(r[col]) >= parseFloat(filterVal.min));
+      if (filterVal.max !== undefined)
+        filtered = filtered.filter((r) => parseFloat(r[col]) <= parseFloat(filterVal.max));
+    }
+  });
+
+  if (search) {
+    const s = search.toLowerCase();
+    filtered = filtered.filter((r) => headers.some((h) => String(r[h]).toLowerCase().includes(s)));
+  }
+
+  return filtered;
+};
+
+// ─────────────────────────────────────────────
+// Helper: Resolve which file to serve
+// ─────────────────────────────────────────────
+const resolveDatasetFile = async (datasetId, userEmail) => {
+  // Look up the file_name from DB
+  const dsResult = await pool.query(
+    "SELECT file_name, upload_status FROM datasets WHERE dataset_id = $1",
+    [datasetId]
+  );
+  if (dsResult.rows.length === 0) return null;
+  const { file_name, upload_status } = dsResult.rows[0];
+  const paths = getDatasetPaths(datasetId, file_name);
+
+  // Priority: cleaned > working > raw
+  for (const candidate of [paths.cleaned, paths.working, paths.raw]) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {}
+  }
+  return null;
+};
+
+// ─────────────────────────────────────────────
+// GET /api/cleaned-data/:id
+// ─────────────────────────────────────────────
 export const getCleanedData = async (req, res) => {
   try {
     const datasetId = req.params.id;
-    const userId = req.user?.email;
-    console.log(`[CLEANED-DATA] datasetId=${datasetId}, userId=${userId}`);
-    if (!userId) {
-      return res.status(401).json({ success: false, message: "Authentication required" });
+    const userEmail = req.user?.email;
+
+    if (!userEmail) return res.status(401).json({ success: false, message: "Authentication required" });
+    if (!datasetId) return res.status(400).json({ success: false, message: "Dataset ID required" });
+
+    // Access control
+    const userResult = await pool.query("SELECT user_id, role FROM users WHERE email = $1", [userEmail]);
+    const user = userResult.rows[0];
+    if (!user) return res.status(401).json({ success: false, message: "User not found" });
+    if (!(await validateDatasetAccess(user.user_id, datasetId, user.role))) {
+      return res.status(403).json({ success: false, message: "Access denied" });
     }
 
-    if (!datasetId) {
-      return res.status(400).json({ success: false, message: "Dataset ID required" });
-    }
-
-    // Try multiple paths to find the dataset files
-    const possiblePaths = [
-      path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, datasetId),
-      path.resolve(process.cwd(), "..", "ml_engine", "data", "users", "tharunmellacheruvu@gmail.com", datasetId),
-      path.resolve(process.cwd(), "..", "ml_engine", "data", "users", "demo@example.com", datasetId),
-    ];
-    
-    let datasetDir = null;
-    let cleanedPath = null;
-    
-    for (const p of possiblePaths) {
-      const cp = path.join(p, "cleaned_data.csv");
-      try {
-        await fs.access(cp);
-        datasetDir = p;
-        cleanedPath = cp;
-        break;
-      } catch {}
-    }
-
-    if (!cleanedPath) {
+    // Resolve file path
+    const filePath = await resolveDatasetFile(datasetId, userEmail);
+    if (!filePath) {
       return res.status(404).json({
         success: false,
-        message: "Cleaned data not found. Ensure the dataset has been processed.",
-      });
-    }
-    
-    console.log(`[CLEANED-DATA] Found cleaned data at: ${cleanedPath}`);
-
-    let csvText;
-    try {
-      csvText = await fs.readFile(cleanedPath, "utf-8");
-      console.log(`[CLEANED-DATA] Found cleaned data file, size: ${csvText.length} bytes`);
-    } catch (err) {
-      console.log(`[CLEANED-DATA] File read error: ${err.message}`);
-      return res.status(404).json({
-        success: false,
-        message: "Cleaned data not found. Ensure the dataset has been processed.",
+        message: "Cleaned data not found. Please complete the cleaning process first.",
       });
     }
 
+    console.log(`[CLEANED-DATA] Serving: ${filePath}`);
+    const csvText = await fs.readFile(filePath, "utf-8");
     const { headers, rows } = parseCSV(csvText);
 
     if (headers.length === 0) {
-      return res.status(400).json({ success: false, message: "Empty CSV file" });
+      return res.status(400).json({ success: false, message: "Empty or invalid CSV file" });
     }
 
-    // Detect column types
+    // Build type + stats on full data
     const columnTypes = {};
-    const columnStats = {};
-    headers.forEach((col) => {
-      const type = detectColumnType(rows, col);
-      columnTypes[col] = type;
+    headers.forEach((col) => { columnTypes[col] = detectColumnType(rows, col); });
+    const columnStats = buildColumnStats(rows, headers, columnTypes);
 
-      if (type === "numeric") {
-        const vals = rows
-          .map((r) => parseFloat(r[col]))
-          .filter((v) => !isNaN(v));
-        vals.sort((a, b) => a - b);
-        columnStats[col] = {
-          min: vals.length ? vals[0] : 0,
-          max: vals.length ? vals[vals.length - 1] : 0,
-          mean: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0,
-          count: vals.length,
-        };
-      } else {
-        const uniqueVals = [...new Set(rows.map((r) => r[col]).filter((v) => v !== ""))];
-        columnStats[col] = {
-          uniqueCount: uniqueVals.length,
-          values: uniqueVals.slice(0, 50),
-        };
-      }
-    });
-
-    // Apply filters from query params
-    let filteredRows = [...rows];
+    // Filters + search
     const filters = req.query.filters ? JSON.parse(req.query.filters) : {};
-
-    Object.entries(filters).forEach(([col, filterVal]) => {
-      if (!headers.includes(col)) return;
-      const type = columnTypes[col];
-
-      if (type === "categorical" || type === "date") {
-        if (Array.isArray(filterVal) && filterVal.length > 0) {
-          const set = new Set(filterVal.map(String));
-          filteredRows = filteredRows.filter((r) => set.has(String(r[col])));
-        }
-      } else if (type === "numeric") {
-        if (filterVal.min !== undefined) {
-          filteredRows = filteredRows.filter(
-            (r) => parseFloat(r[col]) >= parseFloat(filterVal.min)
-          );
-        }
-        if (filterVal.max !== undefined) {
-          filteredRows = filteredRows.filter(
-            (r) => parseFloat(r[col]) <= parseFloat(filterVal.max)
-          );
-        }
-      }
-    });
-
-    // Apply search
-    if (req.query.search) {
-      const searchLower = req.query.search.toLowerCase();
-      filteredRows = filteredRows.filter((r) =>
-        headers.some((h) => String(r[h]).toLowerCase().includes(searchLower))
-      );
-    }
+    const search = req.query.search || "";
+    const filteredRows = applyFiltersAndSearch(rows, headers, columnTypes, filters, search);
 
     // Pagination
     const page = parseInt(req.query.page) || 1;
@@ -175,29 +180,11 @@ export const getCleanedData = async (req, res) => {
     const totalRows = filteredRows.length;
     const paginatedRows = filteredRows.slice((page - 1) * limit, page * limit);
 
-    // Load schema for enriched metadata
-    let schema = {};
-    try {
-      const schemaPath = path.join(datasetDir, "schema.json");
-      const schemaData = await fs.readFile(schemaPath, "utf-8");
-      schema = JSON.parse(schemaData);
-    } catch {}
-
-    // Load KPI summary
-    let kpis = {};
-    try {
-      const kpiPath = path.join(datasetDir, "kpi_summary.json");
-      const kpiData = await fs.readFile(kpiPath, "utf-8");
-      kpis = JSON.parse(kpiData);
-    } catch {}
-
     return res.json({
       success: true,
-      headers,
+      headers: headers.filter((h) => h !== "Unnamed: 0.1" && h !== "Unnamed: 0"),
       columnTypes,
       columnStats,
-      schema,
-      kpis,
       rows: paginatedRows,
       totalRows,
       page,
@@ -205,92 +192,56 @@ export const getCleanedData = async (req, res) => {
       totalPages: Math.ceil(totalRows / limit),
     });
   } catch (err) {
-    console.error("CLEANED DATA ERROR:", err);
+    console.error("[CLEANED-DATA ERROR]", err);
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 
+// ─────────────────────────────────────────────
+// GET /api/original-data/:id
+// ─────────────────────────────────────────────
 export const getOriginalData = async (req, res) => {
   try {
     const datasetId = req.params.id;
-    const userId = req.user?.email;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: "Authentication required" });
+    const userEmail = req.user?.email;
+
+    if (!userEmail) return res.status(401).json({ success: false, message: "Authentication required" });
+    if (!datasetId) return res.status(400).json({ success: false, message: "Dataset ID required" });
+
+    const userResult = await pool.query("SELECT user_id, role FROM users WHERE email = $1", [userEmail]);
+    const user = userResult.rows[0];
+    if (!user) return res.status(401).json({ success: false, message: "User not found" });
+    if (!(await validateDatasetAccess(user.user_id, datasetId, user.role))) {
+      return res.status(403).json({ success: false, message: "Access denied" });
     }
 
-    if (!datasetId) {
-      return res.status(400).json({ success: false, message: "Dataset ID required" });
+    const dsResult = await pool.query(
+      "SELECT file_name FROM datasets WHERE dataset_id = $1",
+      [datasetId]
+    );
+    if (dsResult.rows.length === 0) return res.status(404).json({ success: false, message: "Dataset not found" });
+
+    const paths = getDatasetPaths(datasetId, dsResult.rows[0].file_name);
+
+    let filePath = null;
+    for (const candidate of [paths.raw]) {
+      try { await fs.access(candidate); filePath = candidate; break; } catch {}
     }
 
-    const possiblePaths = [
-      path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, datasetId),
-      path.resolve(process.cwd(), "..", "ml_engine", "data", "users", "tharunmellacheruvu@gmail.com", datasetId),
-      path.resolve(process.cwd(), "..", "ml_engine", "data", "users", "demo@example.com", datasetId),
-    ];
-    
-    let datasetDir = null;
-    let originalPath = null;
-    
-    for (const p of possiblePaths) {
-      const op = path.join(p, "raw_data.csv");
-      try {
-        await fs.access(op);
-        datasetDir = p;
-        originalPath = op;
-        break;
-      } catch {}
-    }
+    if (!filePath) return res.status(404).json({ success: false, message: "Original data not found" });
 
-    if (!originalPath) {
-      return res.status(404).json({
-        success: false,
-        message: "Original data not found. Ensure the dataset has been processed.",
-      });
-    }
-
+    const csvText = await fs.readFile(filePath, "utf-8");
     const { headers, rows } = parseCSV(csvText);
 
-    if (headers.length === 0) {
-      return res.status(400).json({ success: false, message: "Empty CSV file" });
-    }
+    if (headers.length === 0) return res.status(400).json({ success: false, message: "Empty CSV file" });
 
     const columnTypes = {};
-    headers.forEach((col) => {
-      columnTypes[col] = detectColumnType(rows, col);
-    });
+    headers.forEach((col) => { columnTypes[col] = detectColumnType(rows, col); });
+    const columnStats = buildColumnStats(rows, headers, columnTypes);
 
-    let filteredRows = [...rows];
     const filters = req.query.filters ? JSON.parse(req.query.filters) : {};
-
-    Object.entries(filters).forEach(([col, filterVal]) => {
-      if (!headers.includes(col)) return;
-      const type = columnTypes[col];
-
-      if (type === "categorical" || type === "date") {
-        if (Array.isArray(filterVal) && filterVal.length > 0) {
-          const set = new Set(filterVal.map(String));
-          filteredRows = filteredRows.filter((r) => set.has(String(r[col])));
-        }
-      } else if (type === "numeric") {
-        if (filterVal.min !== undefined) {
-          filteredRows = filteredRows.filter(
-            (r) => parseFloat(r[col]) >= parseFloat(filterVal.min)
-          );
-        }
-        if (filterVal.max !== undefined) {
-          filteredRows = filteredRows.filter(
-            (r) => parseFloat(r[col]) <= parseFloat(filterVal.max)
-          );
-        }
-      }
-    });
-
-    if (req.query.search) {
-      const searchLower = req.query.search.toLowerCase();
-      filteredRows = filteredRows.filter((r) =>
-        headers.some((h) => String(r[h]).toLowerCase().includes(searchLower))
-      );
-    }
+    const search = req.query.search || "";
+    const filteredRows = applyFiltersAndSearch(rows, headers, columnTypes, filters, search);
 
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 500;
@@ -301,6 +252,7 @@ export const getOriginalData = async (req, res) => {
       success: true,
       headers,
       columnTypes,
+      columnStats,
       rows: paginatedRows,
       totalRows,
       page,
@@ -308,7 +260,7 @@ export const getOriginalData = async (req, res) => {
       totalPages: Math.ceil(totalRows / limit),
     });
   } catch (err) {
-    console.error("ORIGINAL DATA ERROR:", err);
+    console.error("[ORIGINAL-DATA ERROR]", err);
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };

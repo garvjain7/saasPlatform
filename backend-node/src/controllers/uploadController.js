@@ -1,7 +1,6 @@
 import path from "path";
 import crypto from "crypto";
 import fs from "fs/promises";
-import { pipelineQueue } from "../queue/pipelineQueue.js";
 import { pool } from "../config/db.js";
 import { sanitizeFilename } from "../utils/fileUtils.js";
 
@@ -80,36 +79,17 @@ export const uploadDataset = async (req, res) => {
       return res.status(500).json({ success: false, message: "Database failure during upload registration" });
     }
 
-    // Trigger ML Pipeline in background (Detached)
-    // We wrap this in a self-executing async function to NOT block the response
-    (async () => {
-      console.log(`🚀 Queuing ML Pipeline Background for: ${datasetId}`);
-      try {
-        // Use BullMQ if available
-        await pipelineQueue.add("processDataset", {
-          datasetId,
-          datasetPath: finalDestPath,
-          userId: userEmail
-        });
-        console.log(`✅ Job added to BullMQ Queue`);
-      } catch (queueErr) {
-        console.warn("⚠️ Queue connection failed. Falling back to native spawn detatched:", queueErr.message);
-        
-        // Native Fallback
-        const { spawn } = await import("child_process");
-        const pythonScript = path.resolve(process.cwd(), '../ml_engine/run_pipeline.py');
-        const mlCwd = path.resolve(process.cwd(), '../ml_engine');
-        
-        const mlProcess = spawn('python', [
-            `"${pythonScript}"`,
-            '--dataset_path', `"${finalDestPath}"`,
-            '--dataset_id', datasetId,
-            '--user_id', userEmail
-        ], { cwd: mlCwd, shell: true, detached: true, stdio: 'ignore' });
-        
-        mlProcess.unref(); // Detach the child process
-      }
-    })().catch(err => console.error("Background pipeline trigger failed:", err));
+    // Return response immediately - No background job queuing here
+    // Cleaning is now triggered on-demand via the workspace/transform API
+    return res.status(200).json({
+      success: true,
+      datasetId: datasetId,
+      originalName: req.file.originalname,
+      fileName: finalFileName,
+      size: req.file.size,
+      message: "Dataset upload successful. Ready for cleaning.",
+      metrics: req.metrics
+    });
 
     // Return response immediately
     return res.status(200).json({

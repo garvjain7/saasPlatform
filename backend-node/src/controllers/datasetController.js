@@ -4,6 +4,7 @@ import { createReadStream } from "fs";
 import { parse } from "csv-parse";
 import XLSX from "xlsx";
 import { pool } from "../config/db.js";
+import { validateDatasetAccess, getDatasetPaths } from "../utils/accessUtils.js";
 
 /** Map schema.txt columns to fields the React app already expects */
 export function mapDatasetRow(row) {
@@ -23,16 +24,7 @@ export function mapDatasetRow(row) {
   };
 }
 
-/** Check if user has access to a dataset */
-async function checkAccess(userId, datasetId, userRole) {
-  if (userRole === 'admin') return true;
-
-  const result = await pool.query(
-    "SELECT can_view FROM permissions WHERE user_id = $1 AND dataset_id = $2 AND can_view = TRUE",
-    [userId, datasetId]
-  );
-  return result.rows.length > 0;
-}
+// Removed checkAccess local function, using validateDatasetAccess from utils
 
 export const getAllDatasets = async (req, res) => {
   const userId = req.user?.email;
@@ -135,68 +127,22 @@ export const getDatasetById = async (req, res) => {
 
 export const getDatasetStatus = async (req, res) => {
   const datasetId = req.params.id;
-  const userId = req.user?.email;
-  if (!userId) {
-    return res.status(401).json({ success: false, message: "Authentication required" });
-  }
+  const userEmail = req.user?.email;
 
   try {
-    const dataset = await pool.query("SELECT * FROM datasets WHERE dataset_id = $1", [datasetId]);
-    if (dataset.rows.length === 0) {
-      return res.status(404).json({ success: false, message: "Dataset not found" });
-    }
+    const userRes = await pool.query("SELECT user_id, role FROM users WHERE email = $1", [userEmail]);
+    const user = userRes.rows[0];
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    const dbStatus = dataset.rows[0].upload_status;
-    const userRole = req.user?.role;
-    const dbUserIdResult = await pool.query("SELECT user_id FROM users WHERE email = $1", [userId]);
-    const dbUserId = dbUserIdResult.rows[0]?.user_id;
+    const datasetRes = await pool.query("SELECT * FROM datasets WHERE dataset_id = $1", [datasetId]);
+    if (datasetRes.rows.length === 0) return res.status(404).json({ success: false, message: "Dataset not found" });
 
-    if (!await checkAccess(dbUserId, datasetId, userRole)) {
+    const dataset = datasetRes.rows[0];
+    if (!(await validateDatasetAccess(user.user_id, datasetId, user.role))) {
       return res.status(403).json({ success: false, message: "Access denied" });
     }
 
-    // If DB has status, use it - but also verify with file-based check for completed
-    if (dbStatus === "completed") {
-      const finalArtifactPath = path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, datasetId, "insights.json");
-      try {
-        await fs.access(finalArtifactPath);
-        return res.json({ success: true, status: "completed" });
-      } catch {
-        // Seeded DB rows are often "completed" without local ML artifacts
-        return res.json({ success: true, status: "completed" });
-      }
-    } else if (dbStatus === 'failed') {
-      // Try to get error from crash.json
-      try {
-        const crashArtifactPath = path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, datasetId, "crash.json");
-        const crashData = await fs.readFile(crashArtifactPath, 'utf8');
-        const errorMsg = JSON.parse(crashData).error || "Unknown pipeline error";
-        return res.json({ success: true, status: "failed", error: errorMsg });
-      } catch {
-        return res.json({ success: true, status: "failed" });
-      }
-    } else if (dbStatus === 'processing') {
-      // Verify it's still actually processing
-      const finalArtifactPath = path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, datasetId, "insights.json");
-      try {
-        await fs.access(finalArtifactPath);
-        // It finished - update DB
-        await pool.query("UPDATE datasets SET upload_status = 'completed', updated_at = NOW() WHERE dataset_id = $1", [datasetId]);
-        return res.json({ success: true, status: "completed" });
-      } catch {
-        try {
-          const crashArtifactPath = path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, datasetId, "crash.json");
-          await fs.access(crashArtifactPath);
-          await pool.query("UPDATE datasets SET upload_status = 'failed', updated_at = NOW() WHERE dataset_id = $1", [datasetId]);
-          return res.json({ success: true, status: "failed" });
-        } catch {
-          return res.json({ success: true, status: "processing" });
-        }
-      }
-    } else {
-      // Unknown status - default to processing
-      return res.json({ success: true, status: "processing" });
-    }
+    return res.json({ success: true, status: dataset.upload_status });
   } catch (err) {
     console.error("getDatasetStatus error:", err);
     return res.status(500).json({ message: "Server error" });
@@ -254,76 +200,153 @@ export const unassignDataset = async (req, res) => {
 };
 
 /**
- * Preview first 50 rows of a dataset
- * GET /api/datasets/:id/preview
+ * Efficiently count lines in a CSV file (total rows)
+ */
+const countLines = async (filePath) => {
+  const { createReadStream } = await import("fs");
+  return new Promise((resolve) => {
+    let count = 0;
+    createReadStream(filePath)
+      .on('data', (chunk) => {
+        for (let i = 0; i < chunk.length; ++i) if (chunk[i] === 10) ++count;
+      })
+      .on('end', () => resolve(count))
+      .on('error', () => resolve(0));
+  });
+};
+
+/**
+ * Get statistics for the raw dataset by calling the Python transformer
+ */
+const getRawStats = async (rawPath) => {
+  const { spawn } = await import("child_process");
+  const path = await import("path");
+  const transformerScript = path.resolve(process.cwd(), "..", "ml_engine", "pipeline", "transformer.py");
+
+  return new Promise((resolve) => {
+    const pythonProcess = spawn("python", [
+      transformerScript,
+      "--input", rawPath,
+      "--output", rawPath + ".stats", // Dummy output for stats mode
+      "--config", JSON.stringify({ type: "get_stats" })
+    ]);
+
+    let stdout = "";
+    pythonProcess.stdout.on("data", (data) => (stdout += data.toString()));
+    pythonProcess.on("close", (code) => {
+      if (code === 0) {
+        try {
+          const result = JSON.parse(stdout.trim());
+          resolve(result);
+        } catch { resolve(null); }
+      } else { resolve(null); }
+    });
+  });
+};
+
+/**
+ * Get the first line (headers) of a CSV file
+ */
+const getCSVHeaders = async (filePath) => {
+  const { createReadStream } = await import("fs");
+  const { parse } = await import("csv-parse");
+  const stream = createReadStream(filePath);
+  const parser = stream.pipe(parse({ to_line: 1 }));
+  for await (const row of parser) {
+    return row; // Returns array of col names
+  }
+  return [];
+};
+
+/**
+ * Preview rows of a dataset (Paginated)
+ * GET /api/datasets/:id/preview?page=1&pageSize=50
  */
 export const getDatasetPreview = async (req, res) => {
   const datasetId = req.params.id;
   const userEmail = req.user?.email;
+  const page = parseInt(req.query.page) || 1;
+  const pageSize = parseInt(req.query.pageSize) || 50;
 
   try {
     const userResult = await pool.query("SELECT user_id, role FROM users WHERE email = $1", [userEmail]);
     const user = userResult.rows[0];
-
     if (!user) return res.status(401).json({ success: false, message: "User not found" });
 
-    // 1. Check Access
-    const hasAccess = await checkAccess(user.user_id, datasetId, user.role);
-    if (!hasAccess) {
-      return res.status(403).json({ success: false, message: "Unauthorized: You do not have permission to preview this dataset" });
+    if (!(await validateDatasetAccess(user.user_id, datasetId, user.role))) {
+      return res.status(403).json({ success: false, message: "Unauthorized" });
     }
 
-    // 2. Fetch dataset record
-    const dsResult = await pool.query("SELECT file_name, dataset_name FROM datasets WHERE dataset_id = $1", [datasetId]);
-    if (dsResult.rows.length === 0) return res.status(404).json({ success: false, message: "Dataset not found" });
+    const dsResult = await pool.query("SELECT file_name, upload_status, schema_json FROM datasets WHERE dataset_id = $1", [datasetId]);
+    const { file_name, upload_status, schema_json } = dsResult.rows[0];
 
-    const fileName = dsResult.rows[0].file_name;
-    const filePath = path.resolve(process.cwd(), "..", "uploads", "raw", fileName);
+    const paths = getDatasetPaths(datasetId, file_name);
+    // Prefer working file if it exists, otherwise use raw
+    let targetPath = paths.raw;
+    const fs = (await import("fs/promises")).default;
+    try {
+      await fs.access(paths.working);
+      targetPath = paths.working;
+    } catch {
+      if (upload_status === 'completed') targetPath = paths.cleaned;
+    }
 
-    // 3. Detect file type and parse
-    const fileExt = path.extname(fileName).toLowerCase();
+    const totalRows = await countLines(targetPath);
+    const headers = await getCSVHeaders(targetPath);
+    
+    const { createReadStream } = await import("fs");
+    const { parse } = await import("csv-parse");
+    const rows = [];
+    
+    // from_line 1 is the header. We want to start data from line 2.
+    // Page 1: from_line = 2, to_line = 51
+    // Page 2: from_line = 52, to_line = 101
+    const fromLine = (page - 1) * pageSize + 2;
+    const toLine = page * pageSize + 1;
 
-    if (fileExt === '.csv') {
-      const rows = [];
-      const parser = createReadStream(filePath).pipe(
-        parse({
-          columns: true,
-          trim: true,
-          skip_empty_lines: true,
-          to_line: 51 // Header + 50 rows
-        })
-      );
+    const parser = createReadStream(targetPath).pipe(
+      parse({ 
+        columns: headers, 
+        trim: true, 
+        skip_empty_lines: true, 
+        from_line: fromLine, 
+        to_line: toLine 
+      })
+    );
 
-      for await (const record of parser) {
-        rows.push(record);
-        if (rows.length >= 50) break;
+    for await (const record of parser) {
+      rows.push(record);
+    }
+
+    // Handle Raw Stats (Baseline for right panel)
+    let rawStats = (schema_json && schema_json.raw_stats) ? schema_json.raw_stats : null;
+    if (!rawStats) {
+      const statsResult = await getRawStats(paths.raw);
+      if (statsResult && statsResult.status === "success") {
+        rawStats = {
+          totalRows: statsResult.total_rows,
+          totalNulls: statsResult.total_nulls,
+          totalDuplicates: statsResult.total_duplicates,
+          columnNulls: statsResult.column_nulls
+        };
+        // Cache in DB
+        const newSchema = { ...(schema_json || {}), raw_stats: rawStats };
+        await pool.query("UPDATE datasets SET schema_json = $1 WHERE dataset_id = $2", [newSchema, datasetId]);
       }
-
-      return res.json({ success: true, data: rows, total_rows_previewed: rows.length });
-    }
-    else if (fileExt === '.xlsx' || fileExt === '.xls') {
-      const fileBuffer = await fs.readFile(filePath);
-      const workbook = XLSX.read(fileBuffer, { type: 'buffer', sheetRows: 51 });
-      const firstSheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[firstSheetName];
-
-      const rows = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-      // sheet_to_json with sheetRows might include header row if not specified, 
-      // but usually gives the objects directly.
-      const limitedRows = rows.slice(0, 50);
-
-      return res.json({ success: true, data: limitedRows, total_rows_previewed: limitedRows.length });
-    }
-    else {
-      return res.status(400).json({ success: false, message: `Unsupported file format for preview: ${fileExt}` });
     }
 
+    return res.json({ 
+      success: true, 
+      data: rows, 
+      totalRows: totalRows,
+      currentPage: page,
+      pageSize: pageSize,
+      totalRowsPreviewed: rows.length,
+      rawStats: rawStats
+    });
   } catch (err) {
     console.error("getDatasetPreview error:", err);
-    if (err.code === 'ENOENT') {
-      return res.status(404).json({ success: false, message: "Dataset file not found on server" });
-    }
-    return res.status(500).json({ success: false, message: "Failed to load dataset preview" });
+    return res.status(500).json({ success: false, message: "Failed to load preview" });
   }
 };
 
@@ -353,7 +376,20 @@ export const downloadDataset = async (req, res) => {
 
     const fileName = dsResult.rows[0].file_name;
     const originalName = dsResult.rows[0].dataset_name;
-    const filePath = path.resolve(process.cwd(), "..", "uploads", "raw", fileName);
+    const paths = getDatasetPaths(datasetId, fileName);
+    
+    // Serve the most actualized file
+    let filePath = paths.raw;
+    const fs = (await import("fs/promises")).default;
+    try {
+      await fs.access(paths.working);
+      filePath = paths.working;
+    } catch {
+      try {
+        await fs.access(paths.cleaned);
+        filePath = paths.cleaned;
+      } catch {}
+    }
 
     // 3. Send file
     res.download(filePath, originalName, (err) => {
@@ -418,11 +454,108 @@ export const updateDatasetStatus = async (req, res) => {
   }
 };
 
-export const cleanDataset = async (req, res) => {
-  return res.json({
-    success: true,
-    message: "Data cleaning is automatically handled by the background AI pipeline.",
-  });
+export const transformDataset = async (req, res) => {
+  const datasetId = req.params.id;
+  const { type, params } = req.body;
+  const userEmail = req.user?.email;
+
+  try {
+    const userRes = await pool.query("SELECT user_id, role FROM users WHERE email = $1", [userEmail]);
+    const user = userRes.rows[0];
+    if (!(await validateDatasetAccess(user.user_id, datasetId, user.role))) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
+    const dsRes = await pool.query("SELECT file_name FROM datasets WHERE dataset_id = $1", [datasetId]);
+    const { file_name } = dsRes.rows[0];
+    const paths = getDatasetPaths(datasetId, file_name);
+
+    const fs = (await import("fs/promises")).default;
+    // Ensure working file exists
+    try {
+      await fs.access(paths.working);
+    } catch {
+      await fs.copyFile(paths.raw, paths.working);
+    }
+
+    // Call Python transformer
+    const { spawn } = await import("child_process");
+    const path = await import("path");
+    const transformerScript = path.resolve(process.cwd(), "..", "ml_engine", "pipeline", "transformer.py");
+    
+    // Use a temp file for safety (rollback on failure)
+    const tempWorking = paths.working + ".tmp";
+    
+    const pythonProcess = spawn("python", [
+      transformerScript,
+      "--input", paths.working,
+      "--output", tempWorking,
+      "--config", JSON.stringify({ type, params })
+    ]);
+
+    let stdout = "";
+    pythonProcess.stdout.on("data", (data) => (stdout += data.toString()));
+
+    pythonProcess.on("close", async (code) => {
+      if (code === 0) {
+        try {
+          const result = JSON.parse(stdout.trim());
+          if (result.status === "success") {
+            await fs.rename(tempWorking, paths.working);
+            return res.json({ success: true, message: "Transformation applied", stats: result });
+          } else {
+            throw new Error(result.message);
+          }
+        } catch (err) {
+          await fs.unlink(tempWorking).catch(() => {});
+          await fs.unlink(paths.working).catch(() => {}); // Rigid rollback to Raw Data state
+          return res.status(500).json({ success: false, message: err.message });
+        }
+      } else {
+        await fs.unlink(tempWorking).catch(() => {});
+        await fs.unlink(paths.working).catch(() => {}); // Rigid rollback to Raw Data state
+        return res.status(500).json({ success: false, message: "Python transformation failed" });
+      }
+    });
+
+  } catch (err) {
+    console.error("transformDataset error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+export const finalizeDataset = async (req, res) => {
+  const datasetId = req.params.id;
+  const userEmail = req.user?.email;
+
+  try {
+    const userRes = await pool.query("SELECT user_id, role FROM users WHERE email = $1", [userEmail]);
+    const user = userRes.rows[0];
+    if (!(await validateDatasetAccess(user.user_id, datasetId, user.role))) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
+    const dsRes = await pool.query("SELECT file_name FROM datasets WHERE dataset_id = $1", [datasetId]);
+    const { file_name } = dsRes.rows[0];
+    const paths = getDatasetPaths(datasetId, file_name);
+
+    const fs = (await import("fs/promises")).default;
+    await fs.mkdir(path.dirname(paths.cleaned), { recursive: true });
+    await fs.rename(paths.working, paths.cleaned);
+
+    await pool.query("UPDATE datasets SET upload_status = 'completed', updated_at = NOW() WHERE dataset_id = $1", [datasetId]);
+    
+    // Log Activity
+    await pool.query(
+      "INSERT INTO activity_logs (user_id, dataset_id, activity_type, activity_description, status) VALUES ($1, $2, $3, $4, $5)",
+      [user.user_id, datasetId, 'FINALIZE', 'Cleaned dataset finalized', 'ok']
+    );
+
+    return res.json({ success: true, message: "Dataset finalized and ready for visualization" });
+  } catch (err) {
+    console.error("finalizeDataset error:", err);
+    return res.status(500).json({ success: false, message: "Failed to finalize dataset" });
+  }
 };
 
 export const trainDataset = async (req, res) => {
@@ -445,34 +578,28 @@ export const getAnalysis = async (req, res) => {
     return res.status(403).json({ success: false, message: "Access denied" });
   }
 
-  // Try multiple paths to find the dataset files
-  const possiblePaths = [
-    path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, datasetId),
-    path.resolve(process.cwd(), "..", "ml_engine", "data", "users", "tharunmellacheruvu@gmail.com", datasetId),
-    path.resolve(process.cwd(), "..", "ml_engine", "data", "users", "demo@example.com", datasetId),
-  ];
-
-  let basePath = null;
-  for (const p of possiblePaths) {
-    try {
-      await fs.access(p);
-      basePath = p;
-      break;
-    } catch { }
+  // Resolve the correct file to use for analysis (cleaned > working > raw)
+  const dsRowResult = await pool.query("SELECT file_name FROM datasets WHERE dataset_id = $1", [datasetId]);
+  const fileName = dsRowResult.rows[0]?.file_name;
+  if (!fileName) {
+    return res.json({ success: true, dataset_name: datasetId, row_count: 0, column_count: 0, quality_score: null, total_nulls: 0, duplicate_rows: 0, cleaning_report: [], columns: [] });
   }
 
-  if (!basePath) {
-    return res.json({
-      success: true,
-      dataset_name: datasetId,
-      row_count: 0,
-      column_count: 0,
-      quality_score: null,
-      total_nulls: 0,
-      duplicate_rows: 0,
-      cleaning_report: [],
-      columns: [],
-    });
+  const paths = getDatasetPaths(datasetId, fileName);
+  let basePath = null;
+  let cleanedDataPath = null;
+
+  // Prefer cleaned, then working, then raw
+  if (await fs.access(paths.cleaned).then(() => true).catch(() => false)) {
+    cleanedDataPath = paths.cleaned;
+  } else if (await fs.access(paths.working).then(() => true).catch(() => false)) {
+    cleanedDataPath = paths.working;
+  } else if (await fs.access(paths.raw).then(() => true).catch(() => false)) {
+    cleanedDataPath = paths.raw;
+  }
+
+  if (!cleanedDataPath) {
+    return res.json({ success: true, dataset_name: datasetId, row_count: 0, column_count: 0, quality_score: null, total_nulls: 0, duplicate_rows: 0, cleaning_report: [], columns: [] });
   }
 
   try {
@@ -484,7 +611,6 @@ export const getAnalysis = async (req, res) => {
     } catch { }
 
     // Read cleaned data to get column analysis
-    const cleanedDataPath = path.join(basePath, "cleaned_data.csv");
     let columns = [];
     let cleaningReport = [];
 
@@ -584,78 +710,64 @@ export const getAnalysis = async (req, res) => {
 
 export const getMetrics = async (req, res) => {
   const datasetId = req.params.id;
-  const userId = req.user?.email;
-  if (!userId) {
-    return res.status(401).json({ success: false, message: "Authentication required" });
-  }
-
-  const userRole = req.user?.role;
-  const dbUserId = (await pool.query("SELECT user_id FROM users WHERE email = $1", [userId])).rows[0]?.user_id;
-  if (!await checkAccess(dbUserId, datasetId, userRole)) {
-    return res.status(403).json({ success: false, message: "Access denied" });
-  }
-
-  const metricsPath = path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, datasetId, "metrics.json");
+  const userEmail = req.user?.email;
+  if (!userEmail) return res.status(401).json({ success: false, message: "Authentication required" });
 
   try {
-    const data = await fs.readFile(metricsPath, "utf-8");
-    return res.json(JSON.parse(data));
+    const userResult = await pool.query("SELECT user_id, role FROM users WHERE email = $1", [userEmail]);
+    const user = userResult.rows[0];
+    if (!user) return res.status(401).json({ success: false, message: "User not found" });
+    if (!(await validateDatasetAccess(user.user_id, datasetId, user.role))) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
+    // Read metrics from DB schema_json (written by cleaning pipeline)
+    const dsResult = await pool.query(
+      "SELECT schema_json, name FROM datasets WHERE dataset_id = $1",
+      [datasetId]
+    );
+    if (dsResult.rows.length === 0) return res.status(404).json({ success: false, message: "Dataset not found" });
+    const { schema_json, name } = dsResult.rows[0];
+
+    return res.json({
+      success: true,
+      dataset_name: name,
+      rawStats: schema_json?.rawStats || null,
+      qualityScore: schema_json?.qualityScore || null,
+      cleaningSteps: schema_json?.cleaningSteps || []
+    });
   } catch (err) {
-    return res.status(404).json({ success: false, message: "Metrics not found" });
+    console.error("[getMetrics]", err);
+    return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 
 export const getDashboardConfig = async (req, res) => {
   const datasetId = req.params.id;
-  const userId = req.user?.email || "tharunmellacheruvu@gmail.com";
-  const userRole = req.user?.role;
-
-  const dbUserId = (await pool.query("SELECT user_id FROM users WHERE email = $1", [userId])).rows[0]?.user_id;
-  if (dbUserId && !await checkAccess(dbUserId, datasetId, userRole)) {
-    return res.status(403).json({ success: false, message: "Access denied" });
-  }
-
-  // Try multiple paths to find the dataset files
-  const possiblePaths = [
-    path.resolve(process.cwd(), "..", "ml_engine", "data", "users", userId, datasetId),
-    path.resolve(process.cwd(), "..", "ml_engine", "data", "users", "tharunmellacheruvu@gmail.com", datasetId),
-    path.resolve(process.cwd(), "..", "ml_engine", "data", "users", "demo@example.com", datasetId),
-  ];
-
-  let datasetDir = null;
-  for (const p of possiblePaths) {
-    try {
-      const dashPath = path.join(p, "dashboard_config.json");
-      await fs.access(dashPath);
-      datasetDir = p;
-      break;
-    } catch { }
-  }
-
-  if (!datasetDir) {
-    return res.status(404).json({ success: false, message: "Dashboard configuration not ready or not found." });
-  }
+  const userEmail = req.user?.email;
 
   try {
-    const dashPath = path.join(datasetDir, "dashboard_config.json");
-    const dashData = await fs.readFile(dashPath, "utf-8");
-    const config = JSON.parse(dashData);
+    const userResult = await pool.query("SELECT user_id, role FROM users WHERE email = $1", [userEmail]);
+    const user = userResult.rows[0];
+    if (!user) return res.status(401).json({ success: false, message: "User not found" });
 
-    try {
-      const kpiPath = path.join(datasetDir, "kpi_summary.json");
-      const kpiData = await fs.readFile(kpiPath, "utf-8");
-      config.kpis_raw = JSON.parse(kpiData);
-    } catch { }
+    if (!(await validateDatasetAccess(user.user_id, datasetId, user.role))) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
 
-    try {
-      const modelMetricsPath = path.join(datasetDir, "model_metrics.json");
-      const mmData = await fs.readFile(modelMetricsPath, "utf-8");
-      config.model_metrics = JSON.parse(mmData);
-    } catch { }
+    // Check if there is a cached dashboard config in schema_json
+    const dsResult = await pool.query("SELECT schema_json FROM datasets WHERE dataset_id = $1", [datasetId]);
+    const schemaJson = dsResult.rows[0]?.schema_json || {};
 
-    return res.json({ success: true, ...config });
+    if (schemaJson.dashboard_config) {
+      return res.json({ success: true, ...schemaJson.dashboard_config });
+    }
+
+    // No config available yet — return empty gracefully
+    return res.json({ success: true, charts: [], insights: [], executive_summary: "" });
   } catch (err) {
-    return res.status(404).json({ success: false, message: "Dashboard configuration not ready or not found." });
+    console.error("[getDashboardConfig] Error:", err);
+    return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 

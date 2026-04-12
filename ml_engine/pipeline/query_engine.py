@@ -67,8 +67,9 @@ def _load_csv(path: str) -> "pd.DataFrame | None":
 class DatasetArtifacts:
     """Lazily loads all artifacts for a dataset directory."""
 
-    def __init__(self, dataset_dir: str):
+    def __init__(self, dataset_dir: str, csv_file: str = None):
         self.dir = dataset_dir
+        self.csv_file = csv_file  # Explicit path to the CSV; overrides dir-based lookup
         self._schema = None
         self._kpi = None
         self._metrics = None
@@ -111,10 +112,18 @@ class DatasetArtifacts:
     @property
     def df(self) -> "pd.DataFrame | None":
         if self._df is None:
-            cleaned = os.path.join(self.dir, "cleaned_data.csv")
-            raw_dir = os.path.dirname(os.path.dirname(os.path.dirname(self.dir)))
-            # Try cleaned first, then look for original upload
-            self._df = _load_csv(cleaned)
+            # Priority 1: explicit csv_file path passed from Node.js
+            if self.csv_file and os.path.exists(self.csv_file):
+                self._df = _load_csv(self.csv_file)
+                logger.info(f"[DatasetArtifacts] Loaded CSV from explicit path: {self.csv_file}")
+            else:
+                # Priority 2: look for cleaned_data.csv in the artifact dir
+                cleaned = os.path.join(self.dir, "cleaned_data.csv")
+                self._df = _load_csv(cleaned)
+                if self._df is not None:
+                    logger.info(f"[DatasetArtifacts] Loaded CSV from artifact dir: {cleaned}")
+                else:
+                    logger.warning(f"[DatasetArtifacts] No CSV found. csv_file={self.csv_file}, dir={self.dir}")
         return self._df
 
     @property
@@ -1451,11 +1460,17 @@ def main():
         default=None,
         help="Override dataset artifact directory (optional)",
     )
+    parser.add_argument(
+        "--csv_file",
+        default=None,
+        help="Explicit path to the cleaned CSV file to use for analysis",
+    )
     args = parser.parse_args()
 
     dataset_dir = args.dataset_dir or resolve_dataset_dir(args.user_id, args.dataset_id)
 
-    artifacts = DatasetArtifacts(dataset_dir)
+    # Pass the explicit csv_file path directly to DatasetArtifacts
+    artifacts = DatasetArtifacts(dataset_dir, csv_file=args.csv_file)
     result = answer_question(args.question, artifacts)
 
     # Single JSON line to stdout — Node.js parses this

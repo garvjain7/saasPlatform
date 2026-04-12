@@ -28,76 +28,22 @@ function inlineMd(text) {
     .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.1);padding:0.1em 0.35em;border-radius:4px;font-size:0.85em;font-family:monospace">$1</code>');
 }
 
+// Generic suggestions that work for any dataset
 const SUGGESTIONS = [
-  { icon: '₹', q: 'What is the total revenue by region?' },
-  { icon: '👥', q: 'How many customers are in each segment?' },
-  { icon: '📊', q: 'Which channel has the highest average order value?' },
-  { icon: '⭐', q: 'Show the top 10 customers by revenue' },
-  { icon: '📈', q: 'What is the monthly revenue trend for 2024?' },
-  { icon: '⚠️', q: 'How many customers churned last quarter?' },
-  { icon: '🏷', q: 'What is the average discount given per region?' },
-  { icon: '🔍', q: 'List all Enterprise customers with revenue above ₹50,000' },
+  { icon: '📊', q: 'Give me a summary of this dataset' },
+  { icon: '🔢', q: 'What columns are available?' },
+  { icon: '📈', q: 'What is the total of the main numeric column?' },
+  { icon: '⭐', q: 'Show the top 10 records by value' },
+  { icon: '📉', q: 'What is the average of each numeric column?' },
+  { icon: '🔍', q: 'How many rows are in this dataset?' },
+  { icon: '⚠️', q: 'Are there any missing or null values?' },
+  { icon: '📋', q: 'What are the unique categories?' },
 ];
-
-const COLUMNS = [
-  { name: 'revenue', type: 'num' }, { name: 'region', type: 'cat' },
-  { name: 'segment', type: 'cat' }, { name: 'signup_date', type: 'date' },
-  { name: 'orders', type: 'num' }, { name: 'status', type: 'cat' },
-  { name: 'channel', type: 'cat' }, { name: 'retention_score', type: 'num' },
-  { name: 'rep_name', type: 'cat' }, { name: 'discount', type: 'num' },
-  { name: 'product', type: 'cat' }, { name: 'last_order_date', type: 'date' },
-];
-
-const PRESET_RESPONSES = {
-  'revenue by region': {
-    text: "Here's the total revenue broken down by region:",
-    table: {
-      cols: ['Region', 'Total Revenue', 'Customers', 'Avg Revenue'],
-      rows: [
-        ['East', '₹1,10,42,300', '3,821', '₹2,890'],
-        ['North', '₹92,18,400', '2,940', '₹3,135'],
-        ['Central', '₹82,60,100', '2,410', '₹3,427'],
-        ['South', '₹74,30,200', '2,180', '₹3,408'],
-        ['West', '₹58,90,000', '1,099', '₹5,359'],
-      ],
-    },
-    code: 'result = df.groupby("region")["revenue"].agg(["sum","count","mean"]).round(0)',
-    insight: 'East leads in total volume. West has the fewest customers but highest average revenue per customer — a high-value segment worth attention.',
-  },
-  'top 10 customers': {
-    text: 'Here are your top 10 customers by total revenue:',
-    table: {
-      cols: ['#', 'Customer', 'Segment', 'Revenue', 'Orders'],
-      rows: [
-        ['1', 'Tata Consultancy', 'Enterprise', '₹8,42,000', '48'],
-        ['2', 'Infosys Ltd', 'Enterprise', '₹7,91,200', '44'],
-        ['3', 'HCL Technologies', 'Enterprise', '₹6,80,500', '39'],
-        ['4', 'Wipro Digital', 'Enterprise', '₹5,92,000', '35'],
-        ['5', 'Reliance Jio', 'Enterprise', '₹5,41,300', '31'],
-        ['6', 'HDFC Bank', 'Enterprise', '₹4,98,400', '28'],
-        ['7', 'Mahindra Group', 'SMB', '₹3,80,200', '22'],
-        ['8', 'Bajaj Finserv', 'SMB', '₹3,42,100', '19'],
-        ['9', 'Flipkart', 'Startup', '₹2,90,400', '16'],
-        ['10', 'Zepto Inc', 'Startup', '₹2,41,200', '14'],
-      ],
-    },
-    code: 'result = df.nlargest(10, "revenue")[["name","segment","revenue","orders"]]',
-    insight: '8 of the top 10 are Enterprise accounts — confirming that Enterprise segment drives most high-value revenue.',
-  },
-};
-
-const DEFAULT_RESPONSE = {
-  text: "I've computed the result from your dataset. Here's a summary:",
-  table: { cols: ['Metric', 'Value'], rows: [['Result computed', 'See generated query below'], ['Rows analyzed', '12,450'], ['Execution time', '142ms']] },
-  code: 'result = df.groupby("segment")["revenue"].mean().round(2)',
-  insight: 'Based on the data, there are clear patterns worth exploring further. Try a more specific follow-up question.',
-};
 
 function getResponse(q) {
-  const ql = q.toLowerCase();
-  if (ql.includes('revenue') && ql.includes('region')) return PRESET_RESPONSES['revenue by region'];
-  if (ql.includes('top') && ql.includes('customer')) return PRESET_RESPONSES['top 10 customers'];
-  return DEFAULT_RESPONSE;
+  return {
+    text: "Please select a dataset from the dropdown above before asking questions.",
+  };
 }
 
 function buildResponseHTML(r) {
@@ -131,6 +77,7 @@ const EmployeeChatPage = () => {
   const datasetId = searchParams.get('ds') || null;
   const [availableDatasets, setAvailableDatasets] = useState([]);
   const [selectedDataset, setSelectedDataset] = useState(null);
+  const [datasetInfo, setDatasetInfo] = useState(null); // { headers, columnTypes, totalRows }
   const [messages, setMessages] = useState([{
     id: 0, role: 'ai',
     content: "👋 Hello! I'm your **AI Data Assistant**. Ask me about **totals**, **trends**, **top performers**, **anomalies**, **forecasts**, or anything about your data!\n\nSelect a dataset from the dropdown above and try one of the suggested questions on the left →",
@@ -143,8 +90,29 @@ const EmployeeChatPage = () => {
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const msgId = useRef(1);
+  const api = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
-  // Load available datasets
+  // Fetch real column/row info for the selected dataset
+  const fetchDatasetInfo = useCallback(async (dsId) => {
+    if (!dsId) return;
+    try {
+      const token = sessionStorage.getItem('token');
+      const res = await fetch(`${api}/cleaned-data/${dsId}?limit=1`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDatasetInfo({
+          headers: (data.headers || []).filter(h => h !== 'Unnamed: 0.1' && h !== 'Unnamed: 0'),
+          columnTypes: data.columnTypes || {},
+          totalRows: data.totalRows || 0,
+        });
+      }
+    } catch (e) {
+      console.warn('Could not load dataset info:', e.message);
+    }
+  }, [api]);
+
   useEffect(() => {
     const loadDatasets = async () => {
       try {
@@ -152,12 +120,13 @@ const EmployeeChatPage = () => {
         if (res.success && res.data) {
           const readyDatasets = res.data.filter(d => d.status === 'completed' || d.status === 'ready');
           setAvailableDatasets(readyDatasets);
-          
+
           if (!datasetId && readyDatasets.length > 0) {
             setSelectedDataset(readyDatasets[0]);
+            fetchDatasetInfo(readyDatasets[0].dataset_id || readyDatasets[0].id);
           } else if (datasetId) {
             const selected = readyDatasets.find(d => (d.dataset_id || d.id) === datasetId);
-            if (selected) setSelectedDataset(selected);
+            if (selected) { setSelectedDataset(selected); fetchDatasetInfo(datasetId); }
           }
         }
       } catch (err) {
@@ -165,7 +134,8 @@ const EmployeeChatPage = () => {
       }
     };
     loadDatasets();
-  }, [datasetId]);
+  }, [datasetId, fetchDatasetInfo]);
+
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isLoading]);
 
@@ -230,7 +200,13 @@ const EmployeeChatPage = () => {
     msgId.current = 1;
   };
 
-  const colTypeColors = { num: { border: 'rgba(63,185,80,0.2)', color: 'var(--success)' }, cat: { border: 'rgba(188,140,255,0.2)', color: 'var(--accent)' }, date: { border: 'rgba(210,153,34,0.2)', color: 'var(--warning)' } };
+  const colTypeColors = { numeric: { border: 'rgba(63,185,80,0.2)', color: 'var(--success)', label: 'NUM' }, categorical: { border: 'rgba(188,140,255,0.2)', color: 'var(--accent)', label: 'CAT' }, date: { border: 'rgba(210,153,34,0.2)', color: 'var(--warning)', label: 'DATE' } };
+
+  // Derive live columns from fetched dataset info
+  const liveColumns = datasetInfo?.headers?.map(h => ({
+    name: h,
+    type: datasetInfo.columnTypes?.[h] || 'categorical',
+  })) || [];
 
   return (
     <EmployeeLayout>
@@ -242,22 +218,30 @@ const EmployeeChatPage = () => {
             <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--text-muted)' }}>Active for this session</div>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
-            {/* Dataset Info */}
+            {/* Dataset Info — Live from API */}
             <div style={{ background: 'rgba(13,17,23,0.95)', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 4 }}>Customer_Data.xlsx</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {selectedDataset?.name || 'No dataset selected'}
+              </div>
               <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--text-muted)', lineHeight: 1.8 }}>
-                <span style={{ color: 'var(--primary)' }}>12,450</span> rows · <span style={{ color: 'var(--primary)' }}>24</span> cols<br />
-                Version <span style={{ color: 'var(--primary)' }}>v3</span> · Cleaned<br />
-                Source: acme-prod/crm
+                {datasetInfo ? (
+                  <>
+                    <span style={{ color: 'var(--primary)' }}>{datasetInfo.totalRows.toLocaleString()}</span> rows ·{' '}
+                    <span style={{ color: 'var(--primary)' }}>{datasetInfo.headers.length}</span> cols<br />
+                    Status: <span style={{ color: 'var(--success)' }}>Cleaned ✓</span>
+                  </>
+                ) : (
+                  <span style={{ color: 'var(--text-muted)' }}>{selectedDataset ? 'Loading...' : 'Select a dataset'}</span>
+                )}
               </div>
             </div>
 
-            {/* Columns */}
+            {/* Columns — Live from dataset */}
             <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--text-muted)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8 }}>Columns</div>
             <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--text-muted)', marginBottom: 6 }}>Click to reference in query</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 6 }}>
-              {COLUMNS.map(col => {
-                const tc = colTypeColors[col.type];
+              {liveColumns.length > 0 ? liveColumns.map(col => {
+                const tc = colTypeColors[col.type] || colTypeColors['categorical'];
                 const isSelected = selectedCols.includes(col.name);
                 return (
                   <span
@@ -274,7 +258,11 @@ const EmployeeChatPage = () => {
                     {col.name}
                   </span>
                 );
-              })}
+              }) : (
+                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  {selectedDataset ? 'Loading columns...' : 'No dataset selected'}
+                </span>
+              )}
             </div>
             <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--text-muted)', marginTop: 4 }}>
               <span style={{ color: 'var(--success)' }}>■</span> numeric &nbsp;
@@ -327,7 +315,10 @@ const EmployeeChatPage = () => {
                   onChange={(e) => {
                     const ds = availableDatasets.find(d => (d.dataset_id || d.id) === e.target.value);
                     if (ds) {
+                      isInitialized?.current && (isInitialized.current = false);
                       setSelectedDataset(ds);
+                      setDatasetInfo(null);
+                      fetchDatasetInfo(ds.dataset_id || ds.id);
                       setMessages([{ id: 0, role: 'ai', content: `👋 Switched to **${ds.name}**. Ask me about **totals**, **trends**, **top performers**, or anything about your data!`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
                       msgId.current = 1;
                     }

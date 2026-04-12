@@ -145,8 +145,8 @@ export const getDatasetAssignments = async (datasetId) => {
     return response.data;
 };
 
-export const getDatasetPreview = async (id) => {
-    const response = await api.get(`/datasets/${id}/preview`);
+export const getDatasetPreview = async (id, page = 1) => {
+    const response = await api.get(`/datasets/${id}/preview`, { params: { page } });
     return response.data;
 };
 
@@ -184,6 +184,16 @@ export const resetPassword = async (token, newPassword) => {
 
 export const getCleanedData = async (datasetId, params = {}) => {
     const response = await api.get(`/cleaned-data/${datasetId}`, { params });
+    return response.data;
+};
+
+export const transformDataset = async (datasetId, type, params) => {
+    const response = await api.post(`/datasets/${datasetId}/transform`, { type, params });
+    return response.data;
+};
+
+export const finalizeDataset = async (datasetId) => {
+    const response = await api.post(`/datasets/${datasetId}/finalize`);
     return response.data;
 };
 

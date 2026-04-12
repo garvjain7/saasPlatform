@@ -1,127 +1,88 @@
 import path from "path";
-import { exec } from "child_process";
-import { fileURLToPath } from "url";
-import { dirname } from "path";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname  = dirname(__filename);
-
-// ML engine base path (relative to backend-node/src/controllers)
-const ML_ENGINE_DIR = path.resolve(__dirname, "../../../ml_engine");
-const QUERY_SCRIPT  = path.join(ML_ENGINE_DIR, "pipeline", "query_engine.py");
-const DATA_DIR      = path.join(ML_ENGINE_DIR, "data", "users");
-
-const QUERY_TIMEOUT_MS = 30_000; // 30 second hard limit
+import { spawn } from "child_process";
+import { pool } from "../config/db.js";
+import { validateDatasetAccess, getDatasetPaths } from "../utils/accessUtils.js";
+import fs from "fs/promises";
 
 export const askQuestion = async (req, res) => {
   const { message, question, datasetId } = req.body;
   const queryText = (message || question || "").trim();
+  const userEmail = req.user?.email;
 
   if (!queryText || !datasetId) {
-    return res.status(400).json({
-      success: false,
-      message: "Both 'message' (or 'question') and 'datasetId' are required.",
-    });
+    return res.status(400).json({ success: false, message: "Message and datasetId are required." });
   }
-
-  // Use email for path, fallback to demo email
-  const userEmail = req.user?.email || "tharunmellacheruvu@gmail.com";
-  
-  // Try multiple paths to find the dataset
-  const possibleDirs = [
-    path.join(DATA_DIR, userEmail, datasetId),
-    path.join(DATA_DIR, "tharunmellacheruvu@gmail.com", datasetId),
-    path.join(DATA_DIR, "demo@example.com", datasetId),
-  ];
-  
-  let datasetDir = null;
-  for (const dir of possibleDirs) {
-    try {
-      const fs = await import('fs');
-      if (fs.existsSync(dir)) {
-        datasetDir = dir;
-        break;
-      }
-    } catch {}
-  }
-  
-  if (!datasetDir) {
-    return res.json({
-      success: true,
-      source: "fallback",
-      answer: "⚠️ Dataset not found. Please ensure the dataset was uploaded and processed successfully. Try selecting a different dataset from the dropdown.",
-      intent: "error",
-      confidence: 0,
-    });
-  }
-
-  // Escape args to prevent shell injection
-  const safeQuestion   = queryText.replace(/"/g, '\\"');
-  const safeUserEmail   = userEmail.replace(/"/g, '\\"');
-  const safeDatasetId  = datasetId.replace(/"/g, '\\"');
-  const safeDatasetDir = datasetDir.replace(/"/g, '\\"');
-
-  const cmd = `python "${QUERY_SCRIPT}" --user_id "${safeUserEmail}" --dataset_id "${safeDatasetId}" --question "${safeQuestion}" --dataset_dir "${safeDatasetDir}"`;
-
-  let responded = false;
-  const timer = setTimeout(() => {
-    if (!responded) {
-      responded = true;
-      console.warn("[ChatController] Python query engine timed out.");
-      return safeFallback("The query engine took too long to respond.", res);
-    }
-  }, QUERY_TIMEOUT_MS);
 
   try {
-    exec(cmd, { timeout: QUERY_TIMEOUT_MS }, (err, stdout, stderr) => {
-      if (responded) return;
-      clearTimeout(timer);
-      responded = true;
+    const userRes = await pool.query("SELECT user_id, role FROM users WHERE email = $1", [userEmail]);
+    const user = userRes.rows[0];
+    if (!user) return res.status(401).json({ success: false, message: "User not found" });
 
-      if (err) {
-        console.error("[ChatController] Python execution error:", err.message);
-        if (stderr) console.error("[ChatController] STDERR:", stderr.slice(0, 500));
-        return safeFallback("The query engine encountered an error. Please try again.", res);
+    // 1. Permission Check
+    if (!(await validateDatasetAccess(user.user_id, datasetId, user.role))) {
+      return res.status(403).json({ success: false, message: "Forbidden: You do not have access to this dataset" });
+    }
+
+    const dsRes = await pool.query("SELECT file_name FROM datasets WHERE dataset_id = $1", [datasetId]);
+    if (!dsRes.rows[0]) return res.status(404).json({ success: false, message: "Dataset not found" });
+
+    const { file_name } = dsRes.rows[0];
+    const paths = getDatasetPaths(datasetId, file_name);
+
+    // 2. Resolve the best available CSV file (cleaned > working > raw)
+    let csvFilePath = null;
+    for (const candidate of [paths.cleaned, paths.working, paths.raw]) {
+      try { await fs.access(candidate); csvFilePath = candidate; break; } catch {}
+    }
+
+    if (!csvFilePath) {
+      return res.json({
+        success: true,
+        source: "fallback",
+        answer: "⚠️ This dataset has not been finalized yet. Please complete the cleaning process first."
+      });
+    }
+
+    // 3. Spawn Python Query Engine — pass explicit csv_file for correct data loading
+    const pythonScript = path.resolve(process.cwd(), "..", "ml_engine", "pipeline", "query_engine.py");
+
+    const pyProcess = spawn("python", [
+      pythonScript,
+      "--user_id",    userEmail,
+      "--dataset_id", datasetId,
+      "--question",   queryText,
+      "--dataset_dir", path.dirname(csvFilePath),
+      "--csv_file",   csvFilePath,   // ← explicit file path, no guessing
+    ]);
+
+    let stdout = "";
+    let stderr = "";
+    pyProcess.stdout.on("data", (data) => (stdout += data.toString()));
+    pyProcess.stderr.on("data", (data) => (stderr += data.toString()));
+
+    pyProcess.on("close", (code) => {
+      if (stderr) console.warn(`[query_engine stderr]: ${stderr.slice(0, 500)}`);
+      if (code !== 0) {
+        console.error(`[query_engine] exited with code ${code}`);
+        return res.json({ success: true, source: "fallback", answer: "The query engine encountered an error. Please try rephrasing your question." });
       }
-
-      if (!stdout || !stdout.trim()) {
-        console.warn("[ChatController] Python returned empty output. STDERR:", stderr?.slice(0, 300));
-        return safeFallback("The query engine returned no output.", res);
-      }
-
       try {
-        const payload = JSON.parse(stdout.trim());
-        return res.json({
-          success:    true,
-          source:     "ml-engine",
-          answer:     payload.answer  || "I could not find an answer to your question.",
-          intent:     payload.intent  || "unknown",
-          confidence: payload.confidence ?? null,
-        });
-      } catch (parseErr) {
-        console.warn("[ChatController] Failed to parse JSON from Python:", stdout.slice(0, 200));
-        // Return raw text as answer (handles non-JSON edge cases)
+        const result = JSON.parse(stdout.trim());
         return res.json({
           success: true,
-          source:  "ml-engine-raw",
-          answer:  stdout.trim(),
-          intent:  "raw",
+          source: "ml-engine",
+          answer: result.answer || "I couldn't find an answer.",
+          intent: result.intent,
+          confidence: result.confidence
         });
+      } catch {
+        // Raw text response (shouldn't happen, but handle gracefully)
+        return res.json({ success: true, source: "ml-engine-raw", answer: stdout.trim() });
       }
     });
-  } catch (error) {
-    clearTimeout(timer);
-    console.error("[ChatController] Unexpected error:", error);
-    return safeFallback("An unexpected server error occurred.", res);
-  }
-};
 
-const safeFallback = (reason, res) => {
-  return res.json({
-    success:    true,
-    source:     "fallback",
-    answer:     `⚠️ ${reason} Please verify your dataset was processed successfully, or rephrase your question.`,
-    intent:     "error",
-    confidence: 0,
-  });
+  } catch (err) {
+    console.error("askQuestion error:", err);
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
 };

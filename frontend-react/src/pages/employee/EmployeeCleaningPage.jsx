@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import './EmployeeCleaningPage.css';
-
-const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+import { getDatasetPreview, transformDataset, finalizeDataset } from '../../services/api';
 
 const STEPS = [
   { id: 1, name: 'Null Values', shortName: 'Null Values' },
@@ -56,28 +55,41 @@ const EmployeeCleaningPage = () => {
   ];
   const [aiSuggestions, setAiSuggestions] = useState([]);
   const [featStatuses, setFeatStatuses] = useState({});
+  const [error, setError] = useState(null);
+  const [page, setPage] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
+  const [rawStats, setRawStats] = useState({
+    totalRows: 0,
+    totalNulls: 0,
+    totalDuplicates: 0,
+    columnNulls: {}
+  });
+  const [colFilter, setColFilter] = useState('all');
 
   useEffect(() => {
     const fetchData = async () => {
       if (!dsId) { setLoading(false); return; }
+      setLoading(true);
       try {
-        const token = sessionStorage.getItem('token');
-        const res = await fetch(`${API_URL}/cleaned-data/${dsId}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        const data = await res.json();
-        if (data.success && data.rows?.length > 0) {
-          setTableRows(data.rows);
-          setCleanedRows(data.rows);
-          setTableHeaders(data.headers || Object.keys(data.rows[0]));
+        const data = await getDatasetPreview(dsId, page);
+        if (data.success) {
+          setTableRows(data.data || []);
+          setCleanedRows(data.data || []);
+          setTotalRows(data.totalRows || 0);
+          if (data.rawStats) setRawStats(data.rawStats);
+          if (data.data?.length > 0) {
+            setTableHeaders(Object.keys(data.data[0]));
+          }
         }
       } catch (err) {
         console.warn('Fetch error:', err);
+        setError("Failed to load dataset data.");
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
     fetchData();
-  }, [dsId]);
+  }, [dsId, page]);
 
   // Handle Drag Resizing
   useEffect(() => {
@@ -269,16 +281,75 @@ const EmployeeCleaningPage = () => {
     setCleanedRows(data);
   }, [settings, tableRows, tableHeaders, featStatuses, aiSuggestions]);
 
-  const handleNext = () => {
+  const handleTransformation = async (stepId, manualSettings = null) => {
+    setLoading(true);
+    setError(null);
+    try {
+      let transformConfig = {};
+      const activeSettings = manualSettings || settings[stepId];
+
+      if (stepId === 1) transformConfig = { type: 'null_fill', params: activeSettings };
+      else if (stepId === 2) transformConfig = { type: 'drop_duplicates', params: activeSettings };
+      else if (stepId === 3) transformConfig = { type: 'type_conversion', params: activeSettings };
+      else if (stepId === 4) transformConfig = { type: 'outlier_handling', params: activeSettings };
+      else if (stepId === 5) {
+        const acceptedFeatures = aiSuggestions.filter(s => featStatuses[s.id] === 'accept');
+        transformConfig = { type: 'feature_eng', params: { features: acceptedFeatures } };
+      }
+
+      const res = await transformDataset(dsId, transformConfig.type, transformConfig.params);
+      if (res.success) {
+        // Reset to page 1 and refresh preview data
+        setPage(1);
+        const previewRes = await getDatasetPreview(dsId, 1);
+        if (previewRes.success) {
+          setTableRows(previewRes.data || []);
+          setTotalRows(previewRes.totalRows || 0);
+          // Update current step to next
+          if (currentStep < 5) {
+            const nextS = currentStep + 1;
+            setCurrentStep(nextS);
+            if (nextS === 5 && !featDone && !featStreaming) startFeatStream();
+          } else {
+            setVerifyOpen(true);
+          }
+        }
+      } else {
+        throw new Error(res.message || "Backend transformation error");
+      }
+    } catch (err) {
+      setError(err.message || "Transformation failed. Please try a different strategy.");
+      // DO NOT reset Step to 1 here. Just refresh to show data hasn't changed.
+      setPage(1);
+      const previewRes = await getDatasetPreview(dsId, 1);
+      if (previewRes.success) {
+        setTableRows(previewRes.data || []);
+        setTotalRows(previewRes.totalRows || 0);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSkip = () => {
     if (currentStep < 5) {
       const nextS = currentStep + 1;
       setCurrentStep(nextS);
-      if (nextS === 5 && !featDone && !featStreaming) {
-        startFeatStream();
-      }
+      if (nextS === 5 && !featDone && !featStreaming) startFeatStream();
     } else {
       setVerifyOpen(true);
     }
+  };
+
+  const handleLetAiDecide = async () => {
+    // 1. Generate AI settings for current step
+    const newSettings = handleAiDecide(); // This currently just updates state, let's make it return settings
+    // 2. Apply them
+    await handleTransformation(currentStep, newSettings);
+  };
+
+  const handleApplyManual = async () => {
+    await handleTransformation(currentStep);
   };
 
   const startFeatStream = () => {
@@ -340,33 +411,17 @@ const EmployeeCleaningPage = () => {
     tick();
   };
 
-  const getColNulls = () => {
-    const stats = {};
-    tableHeaders.forEach(col => {
-      stats[col] = tableRows.filter(r => r[col] == null || String(r[col]).trim() === '').length;
-    });
-    return stats;
-  };
   const getNumCols = () => {
     return tableHeaders.filter(col => {
       const vals = tableRows.slice(0, 20).map(r => parseFloat(r[col])).filter(v => !isNaN(v));
       return vals.length > 5;
     });
   };
-  const getDupes = () => {
-    const seen = new Set();
-    let dupes = 0;
-    tableRows.forEach(row => {
-      const key = JSON.stringify(row);
-      if (seen.has(key)) dupes++; else seen.add(key);
-    });
-    return dupes;
-  };
 
-  const cNulls = getColNulls();
-  const totNulls = Object.values(cNulls).reduce((a, b) => a + b, 0);
-  const nullCols = tableHeaders.filter(c => cNulls[c] > 0);
-  const totDupes = getDupes();
+  const cNulls = rawStats.columnNulls || {};
+  const totNulls = rawStats.totalNulls || 0;
+  const nullCols = Object.keys(cNulls).filter(c => cNulls[c] > 0);
+  const totDupes = rawStats.totalDuplicates || 0;
   const numCols = getNumCols();
 
   const handleAiDecide = () => {
@@ -375,6 +430,7 @@ const EmployeeCleaningPage = () => {
     if (currentStep === 1) {
       const s1 = {};
       nullCols.forEach(col => {
+        // We still use a preview check for numeric vs string because raw_stats doesn't hold types yet
         const isNumeric = tableRows.slice(0, 20).map(r => parseFloat(r[col])).filter(v => !isNaN(v)).length > 5;
         s1[col] = isNumeric ? 'Fill with median' : 'Fill with mode';
       });
@@ -411,12 +467,28 @@ const EmployeeCleaningPage = () => {
     }
     
     setSettings(newSettings);
+    return newSettings[currentStep];
   };
 
   const activeData = cleanedRows.length > 0 ? cleanedRows : tableRows;
   
   const acceptedFeatObj = aiSuggestions.filter(s => featStatuses[s.id] === 'accept');
-  const showHeaders = [...(tableHeaders.length > 0 ? tableHeaders.slice(0, 12) : []), ...acceptedFeatObj.map(f => f.col)];
+  
+  // Logical Filtering for headers
+  let showHeaders = [...tableHeaders];
+  
+  if (colFilter === 'highlighted') {
+    if (currentStep === 1) {
+      showHeaders = tableHeaders.filter(c => (rawStats.columnNulls?.[c] || 0) > 0);
+    } else if (currentStep === 4) {
+      // Outliers: use numeric columns that were flagged (this is a simplified check)
+      showHeaders = getNumCols();
+    }
+    // For other steps, we show all as they affect rows or are global
+  }
+  
+  // Limit initial view to prevent lag, append new features
+  const limitedHeaders = [...(showHeaders.length > 0 ? showHeaders.slice(0, 15) : []), ...acceptedFeatObj.map(f => f.col)];
 
   const getBadge = () => {
     switch (currentStep) {
@@ -430,28 +502,9 @@ const EmployeeCleaningPage = () => {
   };
 
   const handleDownload = () => {
-    if (activeData.length === 0) return;
-    const acceptedFeatObj = aiSuggestions.filter(s => featStatuses[s.id] === 'accept');
-    const fullHeaders = [...tableHeaders, ...acceptedFeatObj.map(f => f.col)];
-    
-    const headerRow = fullHeaders.map(h => `"${h.replace(/"/g, '""')}"`).join(',');
-    const rows = activeData.map(row => 
-      fullHeaders.map(col => {
-        const cell = row[col];
-        if (cell == null || String(cell).trim() === '') return '""';
-        return `"${String(cell).replace(/"/g, '""')}"`;
-      }).join(',')
-    ).join('\n');
-    
-    const csvContent = `${headerRow}\n${rows}`;
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `${dsName.replace(/\s+/g, '_')}_cleaned.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    if (!dsId) return;
+    const downloadUrl = `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'}/datasets/${dsId}/download`;
+    window.open(downloadUrl, '_blank');
   };
 
   return (
@@ -493,7 +546,7 @@ const EmployeeCleaningPage = () => {
           }
 
           return (
-            <div key={s.id} className={cls} onClick={() => setCurrentStep(s.id)}>
+            <div key={s.id} className={cls} style={{ cursor: 'default' }}>
               <div className="clean-step-circle">{s.id === 5 ? '✦' : s.id}</div>
               <div className="clean-step-name">{s.shortName}</div>
               <div className="clean-step-status">{status}</div>
@@ -507,13 +560,45 @@ const EmployeeCleaningPage = () => {
         
         {/* LEFT PANEL - Table */}
         <div className="clean-panel-left" style={{ width: `${leftWidth}%` }}>
-          <div className="clean-panel-toolbar">
-            <div className="clean-toolbar-label">Showing <strong>all {showHeaders.length} columns</strong></div>
-            <select className="clean-col-select">
+          <div className="clean-panel-toolbar" style={{ justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div className="clean-toolbar-label">Showing <strong>all {showHeaders.length} columns</strong></div>
+              <div className={`clean-step-badge ${getBadge().cls}`} style={{ marginLeft: 0 }}>{getBadge().txt}</div>
+            </div>
+            
+            {/* Pagination Controls */}
+            {totalRows > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(255,255,255,0.05)', padding: '4px 12px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.1)' }}>
+                <span style={{ fontSize: 12, color: 'var(--ink3)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                  {(page - 1) * 50 + 1}-{Math.min(page * 50, totalRows)} of {totalRows.toLocaleString()}
+                </span>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button 
+                    disabled={page === 1 || loading} 
+                    onClick={() => setPage(p => p - 1)}
+                    style={{ background: 'none', border: 'none', color: page === 1 ? '#555' : '#aaa', cursor: page === 1 ? 'default' : 'pointer', fontSize: 16, padding: '0 4px' }}
+                  >
+                    ←
+                  </button>
+                  <button 
+                    disabled={page * 50 >= totalRows || loading} 
+                    onClick={() => setPage(p => p + 1)}
+                    style={{ background: 'none', border: 'none', color: page * 50 >= totalRows ? '#555' : '#aaa', cursor: page * 50 >= totalRows ? 'default' : 'pointer', fontSize: 16, padding: '0 4px' }}
+                  >
+                    →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <select 
+              className="clean-col-select" 
+              value={colFilter} 
+              onChange={(e) => setColFilter(e.target.value)}
+            >
               <option value="all">All Columns</option>
               <option value="highlighted">Affected Columns Only</option>
             </select>
-            <div className={`clean-step-badge ${getBadge().cls}`}>{getBadge().txt}</div>
           </div>
           <div className="clean-data-scroll">
             {loading ? (
@@ -535,17 +620,19 @@ const EmployeeCleaningPage = () => {
                 <thead>
                   <tr>
                     <th>#</th>
-                    {showHeaders.map(col => {
+                    {limitedHeaders.map(col => {
                       const isNew = acceptedFeatObj.some(f => f.col === col);
-                      return <th key={col} className={isNew ? 'col-new' : ''}>{col}</th>;
+                      const isNullCol = (rawStats.columnNulls?.[col] || 0) > 0;
+                      const thCls = `${isNew ? 'col-new' : ''} ${isNullCol && currentStep === 1 ? 'col-problem' : ''}`;
+                      return <th key={col} className={thCls}>{col}</th>;
                     })}
                   </tr>
                 </thead>
                 <tbody>
-                  {activeData.slice(0, 50).map((row, ri) => (
+                  {activeData.map((row, ri) => (
                     <tr key={ri}>
-                      <td className="row-num">{ri + 1}</td>
-                      {showHeaders.map(col => {
+                      <td className="row-num">{(page - 1) * 50 + ri + 1}</td>
+                      {limitedHeaders.map(col => {
                         const val = row[col];
                         const isNull = val == null || String(val).trim() === '';
                         let cls = '';
@@ -555,7 +642,7 @@ const EmployeeCleaningPage = () => {
                         }
                         const isNew = acceptedFeatObj.some(f => f.col === col);
                         if (isNew) cls = 'cell-new';
-                        return <td key={col} className={cls}>{isNull && currentStep === 1 ? 'NULL' : String(val ?? '')}</td>;
+                        return <td key={col} className={cls}>{isNull && currentStep === 1 ? (colFilter === 'highlighted' ? 'NULL' : 'NULL') : String(val ?? '')}</td>;
                       })}
                     </tr>
                   ))}
@@ -744,9 +831,53 @@ const EmployeeCleaningPage = () => {
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: 8, marginTop: 32, padding: '16px 0 0 0', borderTop: '1px solid var(--border)' }}>
-              {currentStep > 1 && <button className="clean-btn clean-btn-ghost" style={{flex: 1}} onClick={() => setCurrentStep(prev => Math.max(1, prev - 1))}>← Previous</button>}
-              <button className="clean-btn clean-btn-primary" style={{flex: 1}} onClick={handleNext}>{currentStep === 5 ? 'Finalize →' : 'Next Step →'}</button>
+            <div style={{ marginTop: 32, padding: '16px 0 0 0', borderTop: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                 {currentStep > 1 && (
+                   <button 
+                     className="clean-btn clean-btn-ghost" 
+                     style={{ flex: 1 }} 
+                     onClick={() => setCurrentStep(prev => prev - 1)}
+                   >
+                     ← Previous Step
+                   </button>
+                 )}
+              </div>
+              {currentStep < 5 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button 
+                      className="clean-btn" 
+                      style={{ flex: 1, background: 'rgba(167, 139, 250, 0.1)', color: 'var(--purple)', border: '1px solid rgba(167, 139, 250, 0.3)' }}
+                      onClick={handleLetAiDecide}
+                      disabled={loading}
+                    >
+                      ✦ Let AI Decide
+                    </button>
+                    <button 
+                      className="clean-btn clean-btn-primary" 
+                      style={{ flex: 1 }}
+                      onClick={handleApplyManual}
+                      disabled={loading}
+                    >
+                      Apply Changes
+                    </button>
+                  </div>
+                  <button 
+                    className="clean-btn clean-btn-ghost" 
+                    style={{ width: '100%', fontSize: 12, opacity: 0.8 }}
+                    onClick={handleSkip}
+                    disabled={loading}
+                  >
+                    Skip this step
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 8 }}>
+                   <button className="clean-btn clean-btn-ghost" style={{flex: 1}} onClick={() => setCurrentStep(prev => Math.max(1, prev - 1))}>← Back</button>
+                   <button className="clean-btn clean-btn-primary" style={{flex: 1}} onClick={() => setVerifyOpen(true)}>Finalize Dataset →</button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -756,8 +887,12 @@ const EmployeeCleaningPage = () => {
       <div className="clean-action-bar">
         <div className="clean-step-indicator">Step {currentStep} of 5 — {STEPS[currentStep-1].name}</div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="clean-btn clean-btn-ghost" onClick={() => setCurrentStep(prev => Math.max(1, prev - 1))}>← Previous</button>
-          <button className="clean-btn clean-btn-primary" onClick={handleNext}>{currentStep === 5 ? 'Finalize →' : 'Next Step →'}</button>
+          {currentStep > 1 && <button className="clean-btn clean-btn-ghost" onClick={() => setCurrentStep(prev => Math.max(1, prev - 1))}>← Previous</button>}
+          {currentStep < 5 ? (
+             <button className="clean-btn clean-btn-primary" onClick={handleApplyManual} disabled={loading}>Apply & Next</button>
+          ) : (
+             <button className="clean-btn clean-btn-primary" onClick={() => setVerifyOpen(true)}>Finalize</button>
+          )}
         </div>
       </div>
 
@@ -817,7 +952,36 @@ const EmployeeCleaningPage = () => {
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="clean-btn clean-btn-primary" onClick={handleDownload}>↓ Download Cleaned CSV</button>
-                <button className="clean-btn clean-btn-green" onClick={() => navigate(`/employee/visualization?ds=${dsId}&name=${encodeURIComponent(dsName)}`)}>Proceed to Visualization →</button>
+                <button 
+                  className="clean-btn clean-btn-green" 
+                  disabled={loading}
+                  onClick={async () => {
+                    setLoading(true);
+                    try {
+                      // 1. Gather accepted features
+                      const acceptedFeatures = aiSuggestions.filter(s => featStatuses[s.id] === 'accept');
+                      
+                      // 2. If features exist, apply them via the transformation engine first
+                      if (acceptedFeatures.length > 0) {
+                        const transformConfig = { type: 'feature_eng', params: { features: acceptedFeatures } };
+                        const transformRes = await transformDataset(dsId, transformConfig.type, transformConfig.params);
+                        if (!transformRes.success) {
+                          throw new Error("Failed to generate features: " + transformRes.message);
+                        }
+                      }
+
+                      // 3. Move file to finalized (cleaned) directory
+                      await finalizeDataset(dsId);
+                      navigate(`/employee/visualization?ds=${dsId}&name=${encodeURIComponent(dsName)}`);
+                    } catch (err) {
+                      setError(err.message || "Failed to finalize dataset.");
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                >
+                  {loading ? 'Finalizing...' : 'Proceed to Visualization →'}
+                </button>
               </div>
             </div>
           </div>
