@@ -264,13 +264,14 @@ export const logCleaningActivity = async (userId, userName, userEmail, datasetId
   });
 };
 
-export const logQueryActivity = async (userId, userName, userEmail, datasetId, datasetName, query, status, durationSeconds) => {
+export const logQueryActivity = async (userId, userName, userEmail, datasetId, datasetName, query, status, durationSeconds, intent) => {
+  const isModify = intent === "modify";
   return logActivity({
     userId,
     userName,
     userEmail,
-    eventType: "QUERY",
-    eventDescription: durationSeconds != null ? `Query (${durationSeconds}ms)` : `Query on ${datasetName}`,
+    eventType: isModify ? "MODIFY" : "QUERY",
+    eventDescription: durationSeconds != null ? `${isModify ? 'Modification' : 'Query'} (${durationSeconds}ms)` : `${isModify ? 'Modified' : 'Query on'} ${datasetName}`,
     datasetId,
     datasetName,
     detail: query,

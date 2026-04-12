@@ -13,16 +13,16 @@ const wrapWithActivity = (handler) => {
     const datasetId = req.body.datasetId;
     
     try {
-      const userId = req.user?.userId || req.user?.email;
+      const userId = req.user?.id || req.user?.userId || req.user?.email;
       const userEmail = req.user?.email;
       
-      let userName = userEmail?.split('@')[0] || 'Unknown';
+      let userName = req.user?.name || userEmail?.split('@')[0] || 'Unknown';
       let datasetName = datasetId;
       
       if (userId && datasetId) {
         try {
           const dsResult = await pool.query(
-            "SELECT name, COALESCE(uploaded_by, $2) as uploaded_by FROM datasets WHERE dataset_id = $1 OR id::text = $1",
+            `SELECT d.dataset_name AS name, COALESCE(u.email, $2) as uploaded_by FROM datasets d LEFT JOIN users u ON d.uploaded_by = u.user_id WHERE d.dataset_id = $1`,
             [datasetId, userEmail]
           );
           if (dsResult.rows.length > 0) {
@@ -49,13 +49,14 @@ const wrapWithActivity = (handler) => {
       if (req.activityUserId && req.activityDatasetId) {
         logQueryActivity(
           req.activityUserId,
-          req.activityUserName || userEmail?.split('@')[0],
-          userEmail,
+          req.activityUserName || req.activityUserEmail?.split('@')[0],
+          req.activityUserEmail,
           req.activityDatasetId,
           req.activityDatasetName || datasetId,
           req.body.message || req.body.question || 'Query',
           data.success ? 'ok' : 'failed',
-          duration
+          duration,
+          data.intent
         ).catch(console.error);
       }
       

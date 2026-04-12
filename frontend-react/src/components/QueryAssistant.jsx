@@ -106,6 +106,7 @@ function useTypingEffect(text, speed = 8, enabled = true) {
 function BotMessage({ msg, isLatest }) {
   const { displayed, done } = useTypingEffect(msg.content, 6, isLatest);
   const [copied, setCopied] = useState(false);
+  const [accessStatus, setAccessStatus] = useState('idle');
 
   const handleCopy = () => {
     navigator.clipboard.writeText(msg.content);
@@ -113,7 +114,16 @@ function BotMessage({ msg, isLatest }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleRequestAccess = () => {
+    setAccessStatus('requested');
+    // Simulate admin approval
+    setTimeout(() => {
+      setAccessStatus('approved');
+    }, 3000);
+  };
+
   const shownText = isLatest ? displayed : msg.content;
+  const isAccessDenied = shownText.includes('Access Denied') && (msg.intent === 'error' || shownText.includes("does not have permission"));
 
   return (
     <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
@@ -144,6 +154,32 @@ function BotMessage({ msg, isLatest }) {
               marginLeft: 4, verticalAlign: 'middle',
               animation: 'cursorBlink 0.8s ease-in-out infinite',
             }} />
+          )}
+
+          {/* Request Access Button */}
+          {done && isAccessDenied && accessStatus !== 'approved' && (
+            <div style={{ marginTop: '0.75rem' }}>
+              <button
+                onClick={handleRequestAccess}
+                disabled={accessStatus === 'requested'}
+                style={{
+                  background: accessStatus === 'requested' ? 'rgba(88,166,255,0.2)' : 'linear-gradient(135deg, #1f6feb, #58a6ff)',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '0.4rem 0.8rem',
+                  color: '#fff',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  cursor: accessStatus === 'requested' ? 'default' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  transition: 'all 0.2s',
+                }}
+              >
+                {accessStatus === 'requested' ? 'Access Requested...' : 'Request Admin Access'}
+              </button>
+            </div>
           )}
 
           {/* Meta row */}

@@ -30,8 +30,13 @@ export const getMe = async () => {
         const response = await api.get('/auth/me');
         if (response.data.success) {
             const user = response.data.user;
+<<<<<<< HEAD
+            localStorage.setItem('role', user.role);
+            localStorage.setItem('userName', user.name || user.full_name || 'User');
+=======
             sessionStorage.setItem('role', user.role);
             sessionStorage.setItem('userName', user.name);
+>>>>>>> upstream/feature
             return user;
         }
     } catch (err) {
@@ -106,10 +111,18 @@ export const getAnalytics = async (datasetId) => {
     return response.data;
 };
 
-export const askQuery = async (datasetId, question) => {
+export const getDatasetAnalysis = async (datasetId) => {
+    const response = await api.get(`/datasets/${datasetId}/analysis`);
+    return response.data;
+};
+
+export const askQuery = async (datasetId, question, model = 'groq', portal = null, isApproved = false) => {
     const response = await api.post('/query', {
         datasetId: datasetId,
         question: question,
+        model: model,
+        portal: portal,
+        isApproved: isApproved,
     });
     return response.data;
 };
@@ -200,6 +213,11 @@ export const getActivityStats = async () => {
 /** Admin dashboard: query_counts per day from PostgreSQL query_logs */
 export const getQueryVolume = async (days = 7) => {
     const response = await api.get('/query-logs/volume', { params: { days } });
+    return response.data;
+};
+
+export const cleanDataset = async (datasetId, detail = "Data cleaning initiated") => {
+    const response = await api.post(`/datasets/${datasetId}/clean`, { detail });
     return response.data;
 };
 

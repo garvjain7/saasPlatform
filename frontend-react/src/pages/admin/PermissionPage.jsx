@@ -37,6 +37,7 @@ export default function PermissionPage() {
   const [users, setUsers] = useState([]);
   const [datasets, setDatasets] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
+  const [datasetAccessRequests, setDatasetAccessRequests] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
@@ -57,6 +58,15 @@ export default function PermissionPage() {
     }
   };
 
+  useEffect(() => {
+    // Poll for localstorage access requests
+    const poll = setInterval(() => {
+      const reqs = JSON.parse(localStorage.getItem('datasetAccessRequests') || '[]');
+      setDatasetAccessRequests(reqs.filter(r => r.status === 'pending'));
+    }, 2000);
+    return () => clearInterval(poll);
+  }, []);
+
   const handleApprove = async (email) => {
     try {
       await approveUser(email, true);
@@ -64,6 +74,13 @@ export default function PermissionPage() {
     } catch (err) {
       console.error('Failed to approve user:', err);
     }
+  };
+
+  const handleDatasetAccessAction = (id, newStatus) => {
+    const reqs = JSON.parse(localStorage.getItem('datasetAccessRequests') || '[]');
+    const updated = reqs.map(r => r.id === id ? { ...r, status: newStatus } : r);
+    localStorage.setItem('datasetAccessRequests', JSON.stringify(updated));
+    setDatasetAccessRequests(updated.filter(r => r.status === 'pending'));
   };
 
   const handleReject = async (email) => {
@@ -88,7 +105,7 @@ export default function PermissionPage() {
     fetchData();
   }, []);
 
-  const pendingCount = pendingUsers.length;
+  const pendingCount = pendingUsers.length + datasetAccessRequests.length;
   const activeCount = users.filter(u => u.is_active).length;
   const totalCount = users.length;
 
@@ -185,6 +202,45 @@ export default function PermissionPage() {
                 </div>
               </div>
             ))
+          )}
+
+          {datasetAccessRequests.length > 0 && (
+            <div style={{ marginTop: 32 }}>
+              <div className="admin-section-header">
+                <div>
+                  <div className="admin-section-title">Dataset Access Requests</div>
+                  <div className="admin-section-sub">{datasetAccessRequests.length} request{datasetAccessRequests.length !== 1 ? 's' : ''} for dataset modification access</div>
+                </div>
+              </div>
+              {datasetAccessRequests.map((req, i) => (
+                <div key={req.id} className="admin-request-card" style={{ animationDelay: `${i * 0.08}s` }}>
+                  <div className="admin-u-avatar" style={{ background: '#cb6ce6', width: 38, height: 38, fontSize: 15, borderRadius: 10, flexShrink: 0 }}>
+                    {req.user?.charAt(0).toUpperCase() || '?'}
+                  </div>
+                  <div className="admin-req-body">
+                    <div className="admin-req-title">
+                      {req.user} - Requesting Modify Access
+                    </div>
+                    <div className="admin-req-meta">
+                      <span>{req.email}</span>
+                      <span>Dataset: {req.dataset}</span>
+                      <span>Requested {formatDate(req.time)}</span>
+                    </div>
+                    <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+                      <span className="admin-badge blue">Modify Permission</span>
+                    </div>
+                  </div>
+                  <div className="admin-req-actions">
+                    <button className="admin-btn admin-btn-danger admin-btn-sm" onClick={() => handleDatasetAccessAction(req.id, 'rejected')}>
+                      <X size={12} /> Deny
+                    </button>
+                    <button className="admin-btn admin-btn-success admin-btn-sm" onClick={() => handleDatasetAccessAction(req.id, 'approved')}>
+                      <Check size={12} /> Grant Access
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}

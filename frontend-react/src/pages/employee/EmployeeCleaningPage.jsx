@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import './EmployeeCleaningPage.css';
+import { cleanDataset } from '../../services/api';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
@@ -452,6 +453,20 @@ const EmployeeCleaningPage = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    
+    // Log cleaning activity asynchronously
+    const detail = `Data cleaning completed: Handled ${totNulls} nulls, ${totDupes} duplicate rows. Downloaded CSV.`;
+    cleanDataset(dsId, detail).catch(err => console.warn("Failed to log download activity:", err));
+  };
+
+  const handleProceedToViz = async () => {
+    try {
+      const detail = `Data cleaning completed: Handled ${totNulls} nulls, ${totDupes} duplicate rows, adjusted data types.`;
+      await cleanDataset(dsId, detail);
+    } catch (err) {
+      console.warn("Failed to log visualization proceed activity:", err);
+    }
+    navigate(`/employee/visualization?ds=${dsId}&name=${encodeURIComponent(dsName)}`);
   };
 
   return (
@@ -817,7 +832,7 @@ const EmployeeCleaningPage = () => {
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="clean-btn clean-btn-primary" onClick={handleDownload}>↓ Download Cleaned CSV</button>
-                <button className="clean-btn clean-btn-green" onClick={() => navigate(`/employee/visualization?ds=${dsId}&name=${encodeURIComponent(dsName)}`)}>Proceed to Visualization →</button>
+                <button className="clean-btn clean-btn-green" onClick={handleProceedToViz}>Proceed to Visualization →</button>
               </div>
             </div>
           </div>

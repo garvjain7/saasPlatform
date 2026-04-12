@@ -20,10 +20,10 @@ router.get("/cleaned-data/:id", protect, async (req, res, next) => {
     if (userId && datasetId) {
       try {
         const dsResult = await pool.query(
-          `SELECT d.name, COALESCE(u.email, $2) as uploaded_by 
+          `SELECT d.dataset_name AS name, COALESCE(u.email, $2) as uploaded_by 
            FROM datasets d 
            LEFT JOIN users u ON d.uploaded_by = u.user_id 
-           WHERE d.dataset_id = $1 OR d.id::text = $1`,
+           WHERE d.dataset_id = $1`,
           [datasetId, userEmail]
         );
         if (dsResult.rows.length > 0) {

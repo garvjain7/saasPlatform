@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, Sparkles, Zap, AlertTriangle, ArrowRight, Settings2, RefreshCw, FileCheck, Activity, BarChart3, UploadCloud } from 'lucide-react';
 import EmployeeLayout from '../../layout/EmployeeLayout';
+import { cleanDataset } from '../../services/api';
 
 const PIPELINE_STEPS = [
   { id: 1, label: 'Uploading', icon: UploadCloud },
@@ -125,6 +126,13 @@ const ColumnCleaningPage = () => {
 
   const handleClean = async () => {
     setCleaning(true);
+    
+    try {
+      await cleanDataset(datasetId);
+    } catch (error) {
+      console.error("Failed to trigger dataset cleaning api", error);
+    }
+
     // Simulate cleaning pipeline steps
     const stepOrder = [0, 1, 2, 3, 4]; // Uploading -> Validating -> Cleaning -> Analyzing -> Dashboard
     for (let i = 0; i < stepOrder.length; i++) {
