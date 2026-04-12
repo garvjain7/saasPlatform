@@ -62,7 +62,7 @@ const EmployeeCleaningPage = () => {
     const fetchData = async () => {
       if (!dsId) { setLoading(false); return; }
       try {
-        const token = localStorage.getItem('token');
+        const token = sessionStorage.getItem('token');
         const res = await fetch(`${API_URL}/cleaned-data/${dsId}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });

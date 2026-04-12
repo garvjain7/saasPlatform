@@ -1,7 +1,9 @@
 export default function Navbar({ title }) {
     const logout = () => {
-        localStorage.removeItem("token");
-        window.location.href = "/";
+        sessionStorage.removeItem("token");
+        sessionStorage.removeItem("role");
+        sessionStorage.removeItem("userName");
+        window.location.href = "/login";
     };
 
     return (

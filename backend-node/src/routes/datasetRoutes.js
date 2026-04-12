@@ -11,6 +11,11 @@ import {
   getDashboardConfig,
   deleteDataset,
   getAllDatasetsAdmin,
+  assignDataset,
+  unassignDataset,
+  getDatasetAssignments,
+  getDatasetPreview,
+  downloadDataset,
 } from "../controllers/datasetController.js";
 import { protect } from "../middleware/protect.js";
 import { logCleaningActivity } from "../controllers/activityController.js";
@@ -40,6 +45,13 @@ router.patch("/datasets/:id/status", protect, updateDatasetStatus);
 
 // Delete dataset
 router.delete("/datasets/:id", protect, deleteDataset);
+
+// Dataset Assignment
+router.post("/datasets/:id/assign", protect, assignDataset);
+router.delete("/datasets/:id/unassign", protect, unassignDataset);
+router.get("/datasets/:id/assignments", protect, getDatasetAssignments);
+router.get("/datasets/:id/preview", protect, getDatasetPreview);
+router.get("/datasets/:id/download", protect, downloadDataset);
 
 /* =====================================================
    ML PIPELINE AUTOMATION

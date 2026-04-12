@@ -8,7 +8,7 @@ const api = axios.create({
 
 // Attach auth token to every request
 api.interceptors.request.use((config) => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
 });
@@ -30,8 +30,13 @@ export const getMe = async () => {
         const response = await api.get('/auth/me');
         if (response.data.success) {
             const user = response.data.user;
+<<<<<<< HEAD
             localStorage.setItem('role', user.role);
             localStorage.setItem('userName', user.name || user.full_name || 'User');
+=======
+            sessionStorage.setItem('role', user.role);
+            sessionStorage.setItem('userName', user.name);
+>>>>>>> upstream/feature
             return user;
         }
     } catch (err) {
@@ -134,6 +139,59 @@ export const getDatasetsAdmin = async () => {
 
 export const deleteDataset = async (datasetId) => {
     const response = await api.delete(`/datasets/${datasetId}`);
+    return response.data;
+};
+
+// ---- Dataset Assignment ----
+export const assignDataset = async (datasetId, userIds) => {
+    const response = await api.post(`/datasets/${datasetId}/assign`, { userIds });
+    return response.data;
+};
+
+export const unassignDataset = async (datasetId, userId) => {
+    const response = await api.delete(`/datasets/${datasetId}/unassign`, { data: { userId } });
+    return response.data;
+};
+
+export const getDatasetAssignments = async (datasetId) => {
+    const response = await api.get(`/datasets/${datasetId}/assignments`);
+    return response.data;
+};
+
+export const getDatasetPreview = async (id) => {
+    const response = await api.get(`/datasets/${id}/preview`);
+    return response.data;
+};
+
+/**
+ * Downloads a dataset file using a temporary link
+ */
+export const downloadDataset = async (id, fileName) => {
+    const response = await api.get(`/datasets/${id}/download`, {
+        responseType: 'blob',
+    });
+    
+    // Create a link to download the blob
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName || 'dataset.csv');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    
+    return true;
+};
+
+// ---- Password Reset ----
+export const forgotPassword = async (email) => {
+    const response = await api.post('/auth/forgot-password', { email });
+    return response.data;
+};
+
+export const resetPassword = async (token, newPassword) => {
+    const response = await api.post('/auth/reset-password', { token, newPassword });
     return response.data;
 };
 

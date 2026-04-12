@@ -54,7 +54,7 @@ const StatusBadge = ({ status }) => {
 
 const EmployeeDashboardPage = () => {
   const navigate = useNavigate();
-  const userName = localStorage.getItem('userName') || 'Employee';
+  const userName = sessionStorage.getItem('userName') || 'Employee';
   const [datasets, setDatasets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

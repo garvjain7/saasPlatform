@@ -181,7 +181,7 @@ export default function LogsPage() {
   const [datasetFilter, setDatasetFilter] = useState('all');
   const [activeTab, setActiveTab] = useState('system');
 
-  const role = localStorage.getItem('role');
+  const role = sessionStorage.getItem('role');
   if (role !== 'admin') return <Navigate to="/datasets" />;
 
   const fetchData = async () => {

@@ -9,7 +9,7 @@ export default function EmployeeDashboard() {
         form.append("file", file);
 
         await axios.post("http://localhost:5000/employee/upload", form, {
-            headers: { authorization: localStorage.getItem("token") }
+            headers: { authorization: sessionStorage.getItem("token") }
         });
 
         alert("Uploaded");

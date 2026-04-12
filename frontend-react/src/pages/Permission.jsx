@@ -8,7 +8,7 @@ export default function PermissionPage() {
 
     const fetchData = () => {
         axios.get("http://localhost:5000/admin/permissions", {
-            headers: { authorization: localStorage.getItem("token") }
+            headers: { authorization: sessionStorage.getItem("token") }
         }).then(res => setData(res.data));
     };
 
@@ -19,7 +19,7 @@ export default function PermissionPage() {
     const update = async (id, status) => {
         await axios.post(`http://localhost:5000/admin/permission/${id}`,
             { status },
-            { headers: { authorization: localStorage.getItem("token") } }
+            { headers: { authorization: sessionStorage.getItem("token") } }
         );
         fetchData();
     };

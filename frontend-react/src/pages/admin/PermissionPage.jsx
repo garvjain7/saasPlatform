@@ -30,7 +30,7 @@ function formatDate(dateStr) {
 }
 
 export default function PermissionPage() {
-  const role = localStorage.getItem('role');
+  const role = sessionStorage.getItem('role');
   if (role !== 'admin') return <Navigate to="/datasets" />;
 
   const [activeTab, setActiveTab] = useState(0);

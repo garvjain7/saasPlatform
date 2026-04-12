@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Users, Database, Zap, AlertCircle, TrendingUp, ArrowUpRight, RefreshCw, Loader, BarChart3, Sparkles } from 'lucide-react';
 import AdminLayout from '../../layout/AdminLayout';
-import { getUsers, getDatasets, getUserStats, getQueryVolume } from '../../services/api';
+import { getUsers, getDatasets, getUserStats, getQueryVolume, getActivityLogs, getDatasetAssignments } from '../../services/api';
+import AssignUserModal from '../../components/admin/AssignUserModal';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
@@ -32,17 +33,20 @@ export default function AdminDashboard() {
   const [animatedBars, setAnimatedBars] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [datasets, setDatasets] = useState([]);
+  const [activityLogs, setActivityLogs] = useState([]);
   const [stats, setStats] = useState({ total: 0, active: 0, byRole: { admin: 0, employee: 0, viewer: 0 } });
   const [loading, setLoading] = useState(true);
   const [roleFilter, setRoleFilter] = useState('all');
   const [queryChartData, setQueryChartData] = useState([10, 10, 10, 10, 10, 10, 10]);
   const [queryDayLabels, setQueryDayLabels] = useState(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
+  const [assignModal, setAssignModal] = useState(null);
+  const [datasetAssignments, setDatasetAssignments] = useState({});
 
-  const role = localStorage.getItem('role');
+  const role = sessionStorage.getItem('role');
   if (role !== 'admin') return <Navigate to="/datasets" />;
 
   const getAuthHeaders = () => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
 
@@ -54,15 +58,17 @@ export default function AdminDashboard() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [usersRes, datasetsRes, statsRes, volRes] = await Promise.all([
+      const [usersRes, datasetsRes, statsRes, volRes, logsRes] = await Promise.all([
         getUsers(roleFilter),
         getDatasets(),
         getUserStats(),
         getQueryVolume(7).catch(() => ({ success: false })),
+        getActivityLogs({ includeSessions: 'true' }).catch(() => ({ success: false }))
       ]);
 
       setEmployees(usersRes.users || []);
       setDatasets(datasetsRes.data || []);
+      setActivityLogs(logsRes?.logs || []);
       setStats(statsRes.stats || { total: 0, active: 0, byRole: { admin: 0, employee: 0, viewer: 0 } });
       if (volRes?.success && Array.isArray(volRes.normalized) && volRes.normalized.length > 0) {
         setQueryChartData(volRes.normalized);
@@ -76,6 +82,25 @@ export default function AdminDashboard() {
       setLoading(false);
     }
   };
+
+  const fetchAssignments = async (dsId) => {
+    try {
+      const res = await getDatasetAssignments(dsId);
+      if (res.success) {
+        setDatasetAssignments(prev => ({ ...prev, [dsId]: res.users }));
+      }
+    } catch (err) {
+      console.warn(`Failed to fetch assignments for ${dsId}`);
+    }
+  };
+
+  useEffect(() => {
+    if (datasets.length > 0) {
+      datasets.slice(0, 8).forEach(ds => {
+        fetchAssignments(ds.dataset_id || ds.id);
+      });
+    }
+  }, [datasets]);
 
   useEffect(() => {
     fetchData();
@@ -143,7 +168,7 @@ export default function AdminDashboard() {
   const processingDatasets = datasets.filter(d => d.status === 'processing').length;
 
   return (
-    <AdminLayout title="Dashboard" subtitle="Company overview and management">
+    <AdminLayout title="Dashboard" subtitle={`Welcome, ${sessionStorage.getItem('userName') || 'Admin'}`}>
       {/* Stat Cards */}
       <div className="admin-stat-grid">
         <div className="admin-stat-card accent">
@@ -186,19 +211,13 @@ export default function AdminDashboard() {
         <div>
           <div className="admin-section-header">
             <div>
-              <div className="admin-section-title">Users</div>
+              <div className="admin-section-title">Employees</div>
               <div className="admin-section-sub">{stats.total} total · {stats.active || stats.total} active</div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={fetchData} disabled={loading}>
-                <RefreshCw size={12} /> Refresh
+              <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => navigate('/admin/employees')}>
+                View All →
               </button>
-              <select className="admin-filter-select" value={roleFilter} onChange={e => setRoleFilter(e.target.value)} style={{ fontSize: 11 }}>
-                <option value="all">All Roles</option>
-                <option value="employee">Employee</option>
-                <option value="admin">Admin</option>
-                <option value="viewer">Viewer</option>
-              </select>
             </div>
           </div>
           <div className="admin-table-wrap">
@@ -230,13 +249,13 @@ export default function AdminDashboard() {
                     </td>
                   </tr>
                 ) : (
-                  employees.map((emp, i) => (
+                  employees.slice(0, 5).map((emp, i) => (
                     <tr key={emp.email} style={{ animation: `adminSlideIn 0.4s cubic-bezier(0.16,1,0.3,1) ${0.1 + i * 0.05}s both` }}>
                       <td>
                         <div className="admin-user-cell">
-                          <div className="admin-u-avatar" style={{ background: emp.color || '#58a6ff' }}>{emp.initials || emp.name?.charAt(0).toUpperCase() || '??'}</div>
+                          <div className="admin-u-avatar" style={{ background: emp.color || '#58a6ff' }}>{emp.initials || emp.full_name?.charAt(0).toUpperCase() || '??'}</div>
                           <div>
-                            <div className="admin-u-name">{emp.name || 'Unknown'}</div>
+                            <div className="admin-u-name">{emp.full_name || 'Unknown'}</div>
                             <div className="admin-u-email">{emp.email}</div>
                           </div>
                         </div>
@@ -253,7 +272,7 @@ export default function AdminDashboard() {
                         </select>
                       </td>
                       <td style={{ fontFamily: "'DM Mono', monospace", fontSize: '12px' }}>{emp.datasets || 0}</td>
-                      <td>{getStatusBadge(emp.status || 'active')}</td>
+                      <td>{getStatusBadge(emp.is_active ? 'active' : 'inactive')}</td>
                       <td><button className="admin-btn admin-btn-ghost admin-btn-sm">⋯</button></td>
                     </tr>
                   ))
@@ -267,33 +286,34 @@ export default function AdminDashboard() {
         <div>
           <div className="admin-section-header">
             <div>
-              <div className="admin-section-title">Dataset Activity</div>
-              <div className="admin-section-sub">{datasets.length} total datasets</div>
+              <div className="admin-section-title">Recent Activity</div>
+              <div className="admin-section-sub">Last 24 hours</div>
             </div>
             <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => navigate('/admin/logs')}>All Logs →</button>
           </div>
           <div className="admin-table-wrap">
             <div className="admin-activity-list">
-              {datasets.slice(0, 6).map((ds, i) => {
-                const statusColor = ds.status === 'completed' || ds.status === 'ready' ? '#3fb950' : 
-                                    ds.status === 'processing' ? '#d29922' : '#f85149';
+              {activityLogs.slice(0, 5).map((log, i) => {
+                const statusColor = log.status === 'ok' ? '#3fb950' : 
+                                    log.status === 'pending' ? '#d29922' : '#f85149';
                 return (
                   <div
-                    key={ds.dataset_id || ds.id}
+                    key={log.log_id || i}
                     className="admin-activity-item"
                     style={{ animation: `adminSlideIn 0.4s cubic-bezier(0.16,1,0.3,1) ${0.15 + i * 0.06}s both` }}
                   >
                     <div className="admin-act-dot" style={{ background: statusColor }} />
                     <div className="admin-act-text">
-                      <strong>{ds.name || 'Dataset'}</strong> - {ds.status || 'ready'}
+                       {/* Make sure userName is valid string to prevent crashing */}
+                      <strong>{String(log.user_name || 'System')}</strong> {log.detail || log.event_description || log.event_type}
                     </div>
-                    <div className="admin-act-time">{formatDate(ds.created_at)}</div>
+                    <div className="admin-act-time">{formatDate(log.created_at)}</div>
                   </div>
                 );
               })}
-              {datasets.length === 0 && (
+              {activityLogs.length === 0 && (
                 <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                  No dataset activity yet
+                  No activity logs yet
                 </div>
               )}
             </div>
@@ -303,66 +323,72 @@ export default function AdminDashboard() {
 
       {/* Row 2: Datasets + Storage/Charts */}
       <div className="admin-two-col">
-        {/* Recent Datasets */}
+        {/* Recent Datasets - Optimized High Density List matching screenshot */}
         <div>
           <div className="admin-section-header">
             <div>
               <div className="admin-section-title">Recent Datasets</div>
-              <div className="admin-section-sub">{datasets.length} total uploads</div>
+              <div className="admin-section-sub">All company uploads</div>
             </div>
-            <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => navigate('/admin/datasets')}>View All →</button>
+            <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => navigate('/datasets')}>
+              View All →
+            </button>
           </div>
           <div className="admin-table-wrap">
-            {loading ? (
-              <div style={{ padding: '40px', textAlign: 'center' }}>
-                <Loader size={24} style={{ animation: 'spin 1s linear infinite', color: 'var(--primary)' }} />
-              </div>
-            ) : datasets.length === 0 ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                No datasets uploaded yet
-              </div>
-            ) : (
-              <table>
-                <thead>
-                  <tr><th>Dataset</th><th>Uploaded By</th><th>Status</th><th>Size</th><th>Actions</th></tr>
-                </thead>
-                <tbody>
-                  {recentDatasets.map((ds, i) => (
+            <table>
+              <thead>
+                <tr>
+                  <th>DATASET</th>
+                  <th>UPLOADED BY</th>
+                  <th>STATUS</th>
+                  <th>SIZE</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                   Array.from({ length: 4 }).map((_, i) => (
+                    <tr key={i}>
+                      <td colSpan={4}><div style={{ height: 40, width: '100%', background: 'rgba(255,255,255,0.02)', borderRadius: 4 }} /></td>
+                    </tr>
+                  ))
+                ) : datasets.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                      No datasets uploaded yet
+                    </td>
+                  </tr>
+                ) : (
+                  recentDatasets.slice(0, 5).map((ds, i) => (
                     <tr key={ds.id} style={{ animation: `adminSlideIn 0.4s cubic-bezier(0.16,1,0.3,1) ${0.2 + i * 0.05}s both` }}>
                       <td>
-                        <div className="admin-ds-name">{ds.name}</div>
-                        <div className="admin-ds-meta">{ds.meta}</div>
-                      </td>
-                      <td>
-                        <div className="admin-user-cell">
-                          <div className="admin-u-avatar" style={{ background: ds.uploaderColor, width: 22, height: 22, fontSize: 9 }}>{ds.uploader}</div>
-                          <span style={{ fontSize: '12px' }}>{ds.uploaderName}</span>
+                        <div style={{ padding: '4px 0' }}>
+                          <div style={{ fontSize: '14px', fontWeight: 600, color: '#fff', marginBottom: '2px' }}>{ds.name}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{ds.meta}</div>
                         </div>
                       </td>
-                      <td>{getStatusBadge(ds.status)}</td>
-                      <td style={{ fontFamily: "'DM Mono', monospace", fontSize: '11px', color: 'var(--text-muted)' }}>{ds.size}</td>
                       <td>
-                        {ds.status === 'completed' || ds.status === 'ready' ? (
-                          <button className="admin-btn admin-btn-ghost admin-btn-sm" style={{ fontSize: 10, padding: '4px 8px' }}
-                            onClick={() => navigate(`/employee/visualization?ds=${ds.id}&name=${encodeURIComponent(ds.name)}`)}>
-                            <BarChart3 size={10} /> View
-                          </button>
-                        ) : (
-                          <button className="admin-btn admin-btn-primary admin-btn-sm" style={{ fontSize: 10, padding: '4px 8px' }}
-                            onClick={() => navigate(`/employee/cleaning?ds=${ds.id}&name=${encodeURIComponent(ds.name)}`)}>
-                            <Sparkles size={10} /> Clean
-                          </button>
-                        )}
+                        <div className="admin-user-cell" style={{ gap: '10px' }}>
+                          <div className="admin-u-avatar admin-u-avatar-sm" style={{ background: ds.uploaderColor }}>{ds.uploader}</div>
+                          <div className="admin-u-name" style={{ fontSize: '13px' }}>{ds.uploaderName}</div>
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', fontSize: '11px', fontWeight: 500, color: ds.status === 'ready' ? '#3fb950' : ds.status === 'processing' ? '#d29922' : '#f85149' }}>
+                          {ds.status === 'ready' ? '✓ Ready' : ds.status === 'processing' ? '⟳ Cleaning' : ds.status === 'chatbot' ? '● Chatbot On' : ds.status}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{ds.size}</div>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
 
-        {/* Storage + Query Volume */}
+        {/* Distribution + Chart */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <div className="admin-section-header">
@@ -394,7 +420,7 @@ export default function AdminDashboard() {
 
           <div>
             <div className="admin-section-header">
-              <div className="admin-section-title">Query volume (7 days, from DB)</div>
+              <div className="admin-section-title">Query volume (7 days)</div>
             </div>
             <div className="admin-table-wrap" style={{ padding: '14px 16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'DM Mono', monospace", fontSize: '10px', color: 'var(--text-muted)', marginBottom: 4 }}>
@@ -415,9 +441,6 @@ export default function AdminDashboard() {
                   />
                 ))}
               </div>
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: 'var(--text-muted)', marginTop: 8 }}>
-                Based on dataset usage
-              </div>
             </div>
           </div>
         </div>
@@ -425,6 +448,7 @@ export default function AdminDashboard() {
 
       <style>{`
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .admin-u-avatar-sm { width: 24px; height: 24px; font-size: 10px; }
       `}</style>
     </AdminLayout>
   );

@@ -78,7 +78,7 @@ const EmployeeSummaryPage = () => {
       setLoading(true);
       
       const dsId = selectedDataset.dataset_id || selectedDataset.id;
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       
       try {
         // Load cleaned data for schema and stats

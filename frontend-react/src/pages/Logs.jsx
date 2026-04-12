@@ -9,7 +9,7 @@ export default function LogsPage() {
 
     useEffect(() => {
         axios.get("http://localhost:5000/admin/logs", {
-            headers: { authorization: localStorage.getItem("token") }
+            headers: { authorization: sessionStorage.getItem("token") }
         }).then(res => {
             const formatted = res.data.map(l => ({
                 User: l.userId?.name,

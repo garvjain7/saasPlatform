@@ -9,7 +9,7 @@ export default function AdminDashboard() {
 
     useEffect(() => {
         axios.get("http://localhost:5000/admin/dashboard", {
-            headers: { authorization: localStorage.getItem("token") }
+            headers: { authorization: sessionStorage.getItem("token") }
         }).then(res => {
             const formatted = res.data.map(d => ({
                 Dataset: d.fileName,

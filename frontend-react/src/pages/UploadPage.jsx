@@ -82,25 +82,26 @@ const UploadPage = () => {
     if (!file) return;
     setIsUploading(true);
     setError('');
-    setCurrentStep(1);
-    setStatus('uploading');
+    const successMsg = 'Dataset uploaded successfully! Redirecting...';
 
     try {
       const response = await uploadDataset(file);
       if (response && response.datasetId) {
         setDatasetId(response.datasetId);
-        setStatus('processing');
-        setCurrentStep(2);
+        setStatus('completed');
+        
+        // Show success state briefly then redirect
+        setTimeout(() => {
+          navigate('/employee/datasets');
+        }, 1500);
       } else {
         setError('Upload succeeded but dataset ID is missing in response.');
         setIsUploading(false);
-        setStatus(null);
       }
     } catch (err) {
       console.error('Upload error:', err);
       setError(err.response?.data?.message || err.message || 'An error occurred during upload.');
       setIsUploading(false);
-      setStatus(null);
     }
   };
 
@@ -113,106 +114,21 @@ const UploadPage = () => {
     setCurrentStep(0);
   };
 
-  // Processing screen
-  if (status === 'processing' || status === 'completed' || status === 'failed') {
+  // Success screen (Toast-like)
+  if (status === 'completed') {
     return (
-      <div className="view-enter flex-center" style={{ minHeight: '70vh', flexDirection: 'column' }}>
-        <div className="glass-panel" style={{ width: '100%', maxWidth: 600, padding: '2.5rem 2rem', textAlign: 'center' }}>
-          {/* Step Timeline */}
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginBottom: 32 }}>
-            {STEPS.map((step, i) => (
-              <div key={step.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flex: 1 }}>
-                <div style={{
-                  width: 32, height: 32, borderRadius: '50%',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 13, fontWeight: 600,
-                  border: `2px solid ${
-                    status === 'failed' ? 'var(--danger)' :
-                    currentStep > i ? 'var(--success)' :
-                    currentStep === i ? 'var(--primary)' : 'var(--border-color)'
-                  }`,
-                  background: status === 'failed' ? 'rgba(248,81,73,0.1)' :
-                    currentStep > i ? 'var(--success)' :
-                    currentStep === i ? 'var(--primary)' : 'transparent',
-                  color: (currentStep > i || currentStep === i) && status !== 'failed' ? '#fff' :
-                    status === 'failed' ? 'var(--danger)' : 'var(--text-muted)',
-                  transition: 'all 0.3s',
-                }}>
-                  {status === 'failed' && currentStep <= i ? '✕' :
-                   currentStep > i ? <CheckCircle2 size={16} /> :
-                   currentStep === i ? <Loader size={16} className="spin" /> : step.id}
-                </div>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, textTransform: 'uppercase', letterSpacing: 1,
-                  color: currentStep >= i ? 'var(--primary)' : 'var(--text-muted)',
-                }}>{step.label}</div>
-              </div>
-            ))}
+      <div className="view-enter flex-center" style={{ minHeight: '60vh', flexDirection: 'column' }}>
+        <div className="glass-panel" style={{ width: '100%', maxWidth: 500, padding: '3rem', textAlign: 'center', border: '1px solid var(--success)' }}>
+          <CheckCircle2 size={64} color="var(--success)" style={{ marginBottom: 24 }} />
+          <h2 style={{ color: 'var(--success)', marginBottom: 16 }}>Upload Successful</h2>
+          <p style={{ color: 'var(--text-muted)', marginBottom: 24 }}>
+            Dataset <strong>{file?.name}</strong> has been uploaded and is being processed in the background.
+          </p>
+          <div className="flex-center" style={{ gap: 12, color: 'var(--text-muted)', fontSize: 13 }}>
+            <Loader size={16} className="spin" />
+            <span>Redirecting to your datasets...</span>
           </div>
-
-          {/* Status Message */}
-          {status === 'completed' ? (
-            <>
-              <CheckCircle2 size={48} color="var(--success)" style={{ marginBottom: 16 }} />
-              <h2 style={{ color: 'var(--success)', marginBottom: 8 }}>Pipeline Complete</h2>
-              <p style={{ color: 'var(--text-muted)', marginBottom: 24, fontFamily: "'DM Mono', monospace", fontSize: 12 }}>
-                Dataset: {file?.name} · ID: {datasetId}
-              </p>
-              <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-                <button className="btn-primary" onClick={() => navigate(`/employee/analysis?ds=${datasetId}&name=${encodeURIComponent(file?.name || '')}`)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0.75rem 1.5rem' }}>
-                  Analyze & Clean Dataset <ArrowRight size={16} />
-                </button>
-                <button onClick={() => navigate('/employee/datasets')} style={{
-                  background: 'none', border: '1px solid var(--border-color)', color: 'var(--text-muted)',
-                  padding: '0.75rem 1.5rem', borderRadius: 8, cursor: 'pointer',
-                  fontFamily: 'var(--font-family)',
-                }}>Upload Another</button>
-              </div>
-            </>
-          ) : status === 'failed' ? (
-            <>
-              <AlertCircle size={48} color="var(--danger)" style={{ marginBottom: 16 }} />
-              <h2 style={{ color: 'var(--danger)', marginBottom: 8 }}>Pipeline Failed</h2>
-              <p style={{ color: 'var(--text-muted)', marginBottom: 8, fontSize: 14 }}>{error}</p>
-              <p style={{ color: 'var(--text-muted)', marginBottom: 24, fontFamily: "'DM Mono', monospace", fontSize: 11 }}>
-                Check that your CSV has headers and at least 10 rows with 1 numeric column.
-              </p>
-              <button onClick={resetUpload} style={{
-                background: 'var(--primary)', border: 'none', color: '#fff',
-                padding: '0.75rem 1.5rem', borderRadius: 8, cursor: 'pointer',
-                fontFamily: 'var(--font-family)',
-              }}>Try Again</button>
-            </>
-          ) : (
-            <>
-              <div style={{ marginBottom: 16 }}>
-                <Loader size={48} color="var(--primary)" className="spin" />
-              </div>
-              <h2 style={{ color: '#fff', marginBottom: 8 }}>Processing Your Dataset</h2>
-              <p style={{ color: 'var(--text-muted)', marginBottom: 16, fontFamily: "'DM Mono', monospace", fontSize: 12 }}>
-                {file?.name} · ID: {datasetId}
-              </p>
-              <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                Running: <strong style={{ color: 'var(--primary)' }}>{STEPS[currentStep - 1]?.label || 'Initializing'}</strong>
-              </p>
-              <div style={{ marginTop: 16, height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 4, overflow: 'hidden' }}>
-                <div style={{
-                  height: '100%', width: `${(currentStep / 5) * 100}%`,
-                  background: 'linear-gradient(90deg, var(--secondary), var(--primary))',
-                  borderRadius: 4, transition: 'width 1s ease',
-                }} />
-              </div>
-              <p style={{ color: 'var(--text-muted)', marginTop: 8, fontFamily: "'DM Mono', monospace", fontSize: 10 }}>
-                This usually takes 10–30 seconds...
-              </p>
-            </>
-          )}
         </div>
-
-        <style>{`
-          @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-          .spin { animation: spin 1s linear infinite; }
-        `}</style>
       </div>
     );
   }

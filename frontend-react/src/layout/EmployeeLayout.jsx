@@ -17,6 +17,7 @@ const navItems = [
 const EmployeeLayout = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
+<<<<<<< HEAD
   const [userName, setUserName] = useState(() => {
     const val = localStorage.getItem('userName');
     return (val && val !== 'undefined' && val !== 'null') ? val : 'Employee';
@@ -28,14 +29,28 @@ const EmployeeLayout = ({ children }) => {
     getMe().then(user => {
       if (user) {
         setUserName(user.name || user.full_name || user.email?.split('@')[0] || 'Employee');
+=======
+  const [userName, setUserName] = useState(sessionStorage.getItem('userName') || 'Employee');
+  
+  // Safe parsing to prevent application crashes if userName gets resolved as null from backend
+  const safeName = userName || 'Employee';
+  const userInitials = safeName.split(' ').filter(Boolean).map(n => n[0]).join('').toUpperCase().slice(0, 2);
+
+  useEffect(() => {
+    getMe().then(user => {
+      if (user && user.name) {
+        setUserName(user.name);
+      } else if (user && user.email) {
+        setUserName(user.email.split('@')[0]);
+>>>>>>> upstream/feature
       }
     });
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('role');
-    localStorage.removeItem('userName');
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('role');
+    sessionStorage.removeItem('userName');
     navigate('/');
   };
 

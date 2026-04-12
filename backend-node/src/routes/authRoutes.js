@@ -1,8 +1,9 @@
 import express from "express";
 import {
-  login, signup,
+  login, 
   getAllUsers, updateUserRole, updateUserStatus, deleteUser, getUserStats,
   getMe, getPendingUsers, approveUser,
+  forgotPassword, validateResetToken, resetPassword
 } from "../controllers/authController.js";
 import { logEmployeeLogout } from "../controllers/activityController.js";
 import { protect } from "../middleware/protect.js";
@@ -23,7 +24,9 @@ router.post("/logout", protect, async (req, res) => {
 
 // Auth
 router.post("/login", login);
-router.post("/signup", protect, isAdmin, signup);
+router.post("/forgot-password", forgotPassword);
+router.get("/validate-reset-token", validateResetToken);
+router.post("/reset-password", resetPassword);
 router.get("/me", protect, getMe);
 
 // User management (admin)
