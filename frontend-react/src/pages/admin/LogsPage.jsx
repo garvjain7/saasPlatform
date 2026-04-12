@@ -71,10 +71,8 @@ function formatDuration(seconds) {
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 }
 
-function ChatbotHistoryView({ logs }) {
-  const chatLogs = logs.filter(l => l.event_type === 'QUERY' || l.event_type === 'MODIFY');
-  
-  const grouped = chatLogs.reduce((acc, log) => {
+function EmployeeLogsView({ logs }) {
+  const grouped = logs.reduce((acc, log) => {
     const key = log.user_email || 'Unknown';
     if (!acc[key]) acc[key] = { name: log.user_name || 'Unknown User', email: key, entries: [] };
     acc[key].entries.push(log);
@@ -85,7 +83,7 @@ function ChatbotHistoryView({ logs }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {Object.values(grouped).length === 0 ? (
         <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '40px', background: 'rgba(22,27,34,0.5)', borderRadius: '12px' }}>
-          No chatbot history found.
+          No employee logs found.
         </div>
       ) : (
         Object.values(grouped).map(userGroup => (
@@ -115,17 +113,24 @@ function ChatbotHistoryView({ logs }) {
                     <span style={{ fontSize: 9 }}>{formatDate(log.created_at).split(', ')[0]}</span>
                   </div>
                   <div style={{ flex: 1 }}>
-                    {log.event_type === 'MODIFY' && (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 10, background: 'rgba(248,81,73,0.15)', color: '#f85149', padding: '2px 6px', borderRadius: '4px', marginBottom: '8px', fontWeight: 600 }}>
-                        <Database size={10} /> DATA MODIFICATION
+                    <div style={{ marginBottom: '8px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <span className={`admin-log-method ${getMethodClass(log.event_type)}`}>
+                        {getEventIcon(log.event_type)}
+                        {log.event_type}
                       </span>
-                    )}
+                      {log.event_type === 'MODIFY' && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 10, background: 'rgba(248,81,73,0.15)', color: '#f85149', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                          <Database size={10} /> DATA MODIFICATION
+                        </span>
+                      )}
+                    </div>
                     <div style={{ fontSize: 13, color: '#e6edf3', lineHeight: 1.5, fontFamily: log.event_type === 'MODIFY' ? "'DM Mono', monospace" : 'inherit' }}>
                       {log.detail || log.event_description}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: '8px', display: 'flex', gap: '12px' }}>
-                      <span>Dataset: {log.dataset_name || '—'}</span>
-                      <span>Status: <span style={{ color: log.status === 'ok' ? '#3fb950' : '#f85149' }}>{log.status}</span></span>
+                      {log.dataset_name && <span>Dataset: {log.dataset_name}</span>}
+                      <span>Status: <span style={{ color: log.status === 'ok' ? '#3fb950' : log.status === 'failed' ? '#f85149' : 'var(--text-muted)' }}>{log.status}</span></span>
+                      {log.duration_seconds > 0 && <span>Duration: {formatDuration(log.duration_seconds)}</span>}
                     </div>
                   </div>
                 </div>
@@ -229,9 +234,9 @@ export default function LogsPage() {
           <Sparkles size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: '-2px' }} /> System Activity
         </button>
         <button 
-          onClick={() => setActiveTab('chatbot')} 
-          style={{ background: 'none', border: 'none', color: activeTab === 'chatbot' ? '#58a6ff' : 'var(--text-muted)', fontWeight: activeTab === 'chatbot' ? 600 : 500, cursor: 'pointer', padding: '0.6rem 1.2rem', fontSize: '0.9rem', borderBottom: activeTab === 'chatbot' ? '2px solid #58a6ff' : '2px solid transparent', marginBottom: '-2px', transition: 'all 0.2s' }}>
-          <MessageSquare size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: '-2px' }} /> Chatbot History
+          onClick={() => setActiveTab('employee_logs')} 
+          style={{ background: 'none', border: 'none', color: activeTab === 'employee_logs' ? '#58a6ff' : 'var(--text-muted)', fontWeight: activeTab === 'employee_logs' ? 600 : 500, cursor: 'pointer', padding: '0.6rem 1.2rem', fontSize: '0.9rem', borderBottom: activeTab === 'employee_logs' ? '2px solid #58a6ff' : '2px solid transparent', marginBottom: '-2px', transition: 'all 0.2s' }}>
+          <MessageSquare size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: '-2px' }} /> Employee Logs
         </button>
       </div>
 
@@ -367,7 +372,7 @@ export default function LogsPage() {
           </div>
         </>
       ) : (
-        <ChatbotHistoryView logs={logs} />
+        <EmployeeLogsView logs={logs} />
       )}
 
       <style>{`
