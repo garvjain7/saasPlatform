@@ -72,6 +72,8 @@ function formatDuration(seconds) {
 }
 
 function EmployeeLogsView({ logs }) {
+  const [searchTerm, setSearchTerm] = useState('');
+  
   const grouped = logs.reduce((acc, log) => {
     const key = log.user_email || 'Unknown';
     if (!acc[key]) acc[key] = { name: log.user_name || 'Unknown User', email: key, entries: [] };
@@ -79,14 +81,37 @@ function EmployeeLogsView({ logs }) {
     return acc;
   }, {});
 
+  const filteredGroups = Object.values(grouped).filter(group => {
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return group.name.toLowerCase().includes(term) || group.email.toLowerCase().includes(term);
+  });
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {Object.values(grouped).length === 0 ? (
+      
+      <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(22,27,34,0.5)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px 16px' }}>
+        <Filter size={16} style={{ color: 'var(--text-muted)', marginRight: '10px' }} />
+        <input 
+          type="text" 
+          placeholder="Search employees by name or email..." 
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={{ background: 'transparent', border: 'none', color: '#fff', width: '100%', outline: 'none', fontSize: '14px', fontFamily: 'inherit' }}
+        />
+        {searchTerm && (
+          <button onClick={() => setSearchTerm('')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>
+            <X size={16} />
+          </button>
+        )}
+      </div>
+
+      {filteredGroups.length === 0 ? (
         <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '40px', background: 'rgba(22,27,34,0.5)', borderRadius: '12px' }}>
-          No employee logs found.
+          No employee logs found matching "{searchTerm}".
         </div>
       ) : (
-        Object.values(grouped).map(userGroup => (
+        filteredGroups.map(userGroup => (
           <div key={userGroup.email} style={{ background: 'rgba(22,27,34,0.5)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', borderBottom: '1px solid rgba(48,54,61,0.6)', paddingBottom: '12px' }}>
               <div className="admin-u-avatar" style={{ background: '#58a6ff', width: 32, height: 32, fontSize: 14 }}>
