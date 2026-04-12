@@ -158,4 +158,9 @@ export const getQueryVolume = async (days = 7) => {
     return response.data;
 };
 
+export const cleanDataset = async (datasetId) => {
+    const response = await api.post(`/datasets/${datasetId}/clean`);
+    return response.data;
+};
+
 export default api;
