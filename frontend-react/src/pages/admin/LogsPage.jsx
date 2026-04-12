@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
-import { Filter, X, Loader, Database, Users, Clock, Eye, Sparkles, BarChart3, FileText, Upload } from 'lucide-react';
+import { Filter, X, Loader, Database, Users, Clock, Eye, Sparkles, BarChart3, FileText, Upload, MessageSquare } from 'lucide-react';
 import AdminLayout from '../../layout/AdminLayout';
 import { getActivityLogs, getActivityStats, getDatasetsAdmin } from '../../services/api';
 
@@ -9,6 +9,7 @@ function getMethodClass(event) {
     case 'LOGIN': return 'admin-method-get';
     case 'LOGOUT': return 'admin-method-get';
     case 'QUERY': return 'admin-method-get';
+    case 'MODIFY': return 'admin-method-blocked';
     case 'CLEAN': return 'admin-method-post';
     case 'VISUALIZE': return 'admin-method-post';
     case 'VIEW_SUMMARY': return 'admin-method-get';
@@ -26,7 +27,8 @@ function getEventIcon(event) {
   switch (event) {
     case 'LOGIN': return <Users size={12} />;
     case 'LOGOUT': return <Clock size={12} />;
-    case 'QUERY': return <Database size={12} />;
+    case 'QUERY': return <MessageSquare size={12} />;
+    case 'MODIFY': return <Database size={12} />;
     case 'CLEAN': return <Sparkles size={12} />;
     case 'VISUALIZE': return <BarChart3 size={12} />;
     case 'VIEW_SUMMARY': return <FileText size={12} />;
@@ -69,6 +71,73 @@ function formatDuration(seconds) {
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 }
 
+function ChatbotHistoryView({ logs }) {
+  const chatLogs = logs.filter(l => l.event_type === 'QUERY' || l.event_type === 'MODIFY');
+  
+  const grouped = chatLogs.reduce((acc, log) => {
+    const key = log.user_email || 'Unknown';
+    if (!acc[key]) acc[key] = { name: log.user_name || 'Unknown User', email: key, entries: [] };
+    acc[key].entries.push(log);
+    return acc;
+  }, {});
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {Object.values(grouped).length === 0 ? (
+        <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '40px', background: 'rgba(22,27,34,0.5)', borderRadius: '12px' }}>
+          No chatbot history found.
+        </div>
+      ) : (
+        Object.values(grouped).map(userGroup => (
+          <div key={userGroup.email} style={{ background: 'rgba(22,27,34,0.5)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', borderBottom: '1px solid rgba(48,54,61,0.6)', paddingBottom: '12px' }}>
+              <div className="admin-u-avatar" style={{ background: '#58a6ff', width: 32, height: 32, fontSize: 14 }}>
+                {userGroup.name.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <div style={{ fontWeight: 600, color: '#fff' }}>{userGroup.name}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{userGroup.email}</div>
+              </div>
+              <div style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '20px' }}>
+                {userGroup.entries.length} interaction{userGroup.entries.length !== 1 && 's'}
+              </div>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {userGroup.entries.map((log, i) => (
+                <div key={i} style={{ 
+                  background: log.event_type === 'MODIFY' ? 'rgba(248,81,73,0.05)' : 'rgba(255,255,255,0.02)', 
+                  border: `1px solid ${log.event_type === 'MODIFY' ? 'rgba(248,81,73,0.2)' : 'rgba(48,54,61,0.6)'}`, 
+                  borderRadius: '8px', padding: '12px', display: 'flex', gap: '16px' 
+                }}>
+                  <div style={{ width: '80px', flexShrink: 0, fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--text-muted)' }}>
+                    {formatDate(log.created_at).split(', ')[1]}<br/>
+                    <span style={{ fontSize: 9 }}>{formatDate(log.created_at).split(', ')[0]}</span>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    {log.event_type === 'MODIFY' && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 10, background: 'rgba(248,81,73,0.15)', color: '#f85149', padding: '2px 6px', borderRadius: '4px', marginBottom: '8px', fontWeight: 600 }}>
+                        <Database size={10} /> DATA MODIFICATION
+                      </span>
+                    )}
+                    <div style={{ fontSize: 13, color: '#e6edf3', lineHeight: 1.5, fontFamily: log.event_type === 'MODIFY' ? "'DM Mono', monospace" : 'inherit' }}>
+                      {log.detail || log.event_description}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: '8px', display: 'flex', gap: '12px' }}>
+                      <span>Dataset: {log.dataset_name || '—'}</span>
+                      <span>Status: <span style={{ color: log.status === 'ok' ? '#3fb950' : '#f85149' }}>{log.status}</span></span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 export default function LogsPage() {
   const [loading, setLoading] = useState(true);
   const [logs, setLogs] = useState([]);
@@ -80,6 +149,7 @@ export default function LogsPage() {
   const [eventFilter, setEventFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [datasetFilter, setDatasetFilter] = useState('all');
+  const [activeTab, setActiveTab] = useState('system');
 
   const role = localStorage.getItem('role');
   if (role !== 'admin') return <Navigate to="/datasets" />;
@@ -93,7 +163,8 @@ export default function LogsPage() {
           event: eventFilter !== 'all' ? eventFilter : undefined,
           status: statusFilter !== 'all' ? statusFilter : undefined,
           dataset: datasetFilter !== 'all' ? datasetFilter : undefined,
-          includeSessions: 'true'
+          includeSessions: 'true',
+          limit: 1000
         }),
         getActivityStats()
       ]);
@@ -145,61 +216,77 @@ export default function LogsPage() {
 
   const totalLogins = logs.filter(l => l.event_type === 'LOGIN').length;
   const totalCleans = logs.filter(l => l.event_type === 'CLEAN').length;
+  const totalModifies = logs.filter(l => l.event_type === 'MODIFY').length;
   const totalQueries = logs.filter(l => l.event_type === 'QUERY').length;
-  const totalVisualizations = logs.filter(l => l.event_type === 'VISUALIZE').length;
 
   return (
     <AdminLayout title="Activity Logs" subtitle="Employee activity tracking with real-time logs">
-      <div className="admin-three-col">
-        <div className="admin-stat-card accent" style={{ padding: 16 }}>
-          <div className="admin-stat-value" style={{ fontSize: 22 }}>{totalLogins}</div>
-          <div className="admin-stat-label">Total Logins</div>
-        </div>
-        <div className="admin-stat-card green" style={{ padding: 16 }}>
-          <div className="admin-stat-value" style={{ fontSize: 22 }}>{totalCleans}</div>
-          <div className="admin-stat-label">Cleaning Actions</div>
-        </div>
-        <div className="admin-stat-card danger" style={{ padding: 16 }}>
-          <div className="admin-stat-value" style={{ fontSize: 22 }}>{totalQueries}</div>
-          <div className="admin-stat-label">Queries Run</div>
-        </div>
-        <div className="admin-stat-card" style={{ padding: 16, background: 'linear-gradient(135deg, rgba(167,139,250,0.2) 0%, rgba(139,92,246,0.1) 100%)' }}>
-          <div className="admin-stat-value" style={{ fontSize: 22, color: '#bc8cff' }}>{totalVisualizations}</div>
-          <div className="admin-stat-label">Visualizations</div>
-        </div>
-      </div>
-
-      <div className="admin-filter-bar">
-        <Filter size={14} style={{ color: 'var(--text-muted)' }} />
-        <select className="admin-filter-select" value={employeeFilter} onChange={e => setEmployeeFilter(e.target.value)}>
-          {userOptions.map(e => <option key={e} value={e}>{e}</option>)}
-        </select>
-        <select className="admin-filter-select" value={eventFilter} onChange={e => setEventFilter(e.target.value)}>
-          {eventOptions.map(e => <option key={e} value={e}>{e === 'all' ? 'All Events' : e}</option>)}
-        </select>
-        <select className="admin-filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          {statusOptions.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
-        <select className="admin-filter-select" value={datasetFilter} onChange={e => setDatasetFilter(e.target.value)}>
-          {datasetOptions.map(d => <option key={d} value={d}>{d === 'all' ? 'All Datasets' : d}</option>)}
-        </select>
-        {hasFilters && (
-          <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={clearFilters} style={{ marginLeft: 'auto' }}>
-            <X size={12} /> Clear Filters
-          </button>
-        )}
-        <button className="admin-btn admin-btn-ghost admin-btn-sm" style={{ marginLeft: hasFilters ? 8 : 'auto' }} onClick={fetchData}>
-          <Loader size={12} style={loading ? { animation: 'spin 1s linear infinite' } : {}} /> Refresh
+      
+      <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid rgba(48,54,61,0.6)', marginBottom: '1.5rem', paddingBottom: '0.1rem' }}>
+        <button 
+          onClick={() => setActiveTab('system')} 
+          style={{ background: 'none', border: 'none', color: activeTab === 'system' ? '#58a6ff' : 'var(--text-muted)', fontWeight: activeTab === 'system' ? 600 : 500, cursor: 'pointer', padding: '0.6rem 1.2rem', fontSize: '0.9rem', borderBottom: activeTab === 'system' ? '2px solid #58a6ff' : '2px solid transparent', marginBottom: '-2px', transition: 'all 0.2s' }}>
+          <Sparkles size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: '-2px' }} /> System Activity
+        </button>
+        <button 
+          onClick={() => setActiveTab('chatbot')} 
+          style={{ background: 'none', border: 'none', color: activeTab === 'chatbot' ? '#58a6ff' : 'var(--text-muted)', fontWeight: activeTab === 'chatbot' ? 600 : 500, cursor: 'pointer', padding: '0.6rem 1.2rem', fontSize: '0.9rem', borderBottom: activeTab === 'chatbot' ? '2px solid #58a6ff' : '2px solid transparent', marginBottom: '-2px', transition: 'all 0.2s' }}>
+          <MessageSquare size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: '-2px' }} /> Chatbot History
         </button>
       </div>
 
-      <div className="admin-section-header">
-        <div>
-          <div className="admin-section-title">All Events</div>
-          <div className="admin-section-sub">Showing {filteredLogs.length} events</div>
-        </div>
-      </div>
-      <div className="admin-table-wrap">
+      {activeTab === 'system' ? (
+        <>
+          <div className="admin-three-col">
+            <div className="admin-stat-card accent" style={{ padding: 16 }}>
+              <div className="admin-stat-value" style={{ fontSize: 22 }}>{totalLogins}</div>
+              <div className="admin-stat-label">Total Logins</div>
+            </div>
+            <div className="admin-stat-card green" style={{ padding: 16 }}>
+              <div className="admin-stat-value" style={{ fontSize: 22 }}>{totalCleans}</div>
+              <div className="admin-stat-label">Cleaning Actions</div>
+            </div>
+            <div className="admin-stat-card danger" style={{ padding: 16 }}>
+              <div className="admin-stat-value" style={{ fontSize: 22 }}>{totalModifies}</div>
+              <div className="admin-stat-label">Data Modifications</div>
+            </div>
+            <div className="admin-stat-card" style={{ padding: 16, background: 'linear-gradient(135deg, rgba(88,166,255,0.15) 0%, rgba(31,111,235,0.1) 100%)' }}>
+              <div className="admin-stat-value" style={{ fontSize: 22, color: '#58a6ff' }}>{totalQueries}</div>
+              <div className="admin-stat-label">Chat Queries</div>
+            </div>
+          </div>
+
+          <div className="admin-filter-bar">
+            <Filter size={14} style={{ color: 'var(--text-muted)' }} />
+            <select className="admin-filter-select" value={employeeFilter} onChange={e => setEmployeeFilter(e.target.value)}>
+              {userOptions.map(e => <option key={e} value={e}>{e}</option>)}
+            </select>
+            <select className="admin-filter-select" value={eventFilter} onChange={e => setEventFilter(e.target.value)}>
+              {eventOptions.map(e => <option key={e} value={e}>{e === 'all' ? 'All Events' : e}</option>)}
+            </select>
+            <select className="admin-filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              {statusOptions.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+            <select className="admin-filter-select" value={datasetFilter} onChange={e => setDatasetFilter(e.target.value)}>
+              {datasetOptions.map(d => <option key={d} value={d}>{d === 'all' ? 'All Datasets' : d}</option>)}
+            </select>
+            {hasFilters && (
+              <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={clearFilters} style={{ marginLeft: 'auto' }}>
+                <X size={12} /> Clear Filters
+              </button>
+            )}
+            <button className="admin-btn admin-btn-ghost admin-btn-sm" style={{ marginLeft: hasFilters ? 8 : 'auto' }} onClick={fetchData}>
+              <Loader size={12} style={loading ? { animation: 'spin 1s linear infinite' } : {}} /> Refresh
+            </button>
+          </div>
+
+          <div className="admin-section-header">
+            <div>
+              <div className="admin-section-title">All Events</div>
+              <div className="admin-section-sub">Showing {filteredLogs.length} events</div>
+            </div>
+          </div>
+          <div className="admin-table-wrap">
         {loading ? (
           <div style={{ padding: '40px', textAlign: 'center' }}>
             <Loader size={24} style={{ animation: 'spin 1s linear infinite', color: 'var(--primary)' }} />
@@ -277,7 +364,11 @@ export default function LogsPage() {
             )}
           </>
         )}
-      </div>
+          </div>
+        </>
+      ) : (
+        <ChatbotHistoryView logs={logs} />
+      )}
 
       <style>{`
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }

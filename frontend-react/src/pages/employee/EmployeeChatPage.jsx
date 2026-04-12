@@ -142,9 +142,39 @@ const EmployeeChatPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCols, setSelectedCols] = useState([]);
   const [queryHistory, setQueryHistory] = useState([]);
+  const [accessRequests, setAccessRequests] = useState({});
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const msgId = useRef(1);
+
+  const handleRequestAccess = (id) => {
+    setAccessRequests(prev => ({ ...prev, [id]: 'requested' }));
+    
+    // Save to localStorage so admin can see it
+    const reqs = JSON.parse(localStorage.getItem('datasetAccessRequests') || '[]');
+    const user = localStorage.getItem('userName') || 'Employee User';
+    const email = localStorage.getItem('email') || 'employee@datainsights.app';
+    reqs.push({
+      id,
+      user,
+      email,
+      dataset: selectedDataset?.name || 'Current Dataset',
+      datasetId: selectedDataset?.dataset_id || selectedDataset?.id || 'unknown',
+      time: new Date().toISOString(),
+      status: 'pending'
+    });
+    localStorage.setItem('datasetAccessRequests', JSON.stringify(reqs));
+
+    // Poll for approval
+    const poll = setInterval(() => {
+      const currentReqs = JSON.parse(localStorage.getItem('datasetAccessRequests') || '[]');
+      const myReq = currentReqs.find(r => r.id === id);
+      if (!myReq || myReq.status === 'approved') {
+        setAccessRequests(prev => ({ ...prev, [id]: 'approved' }));
+        clearInterval(poll);
+      }
+    }, 2000);
+  };
 
   // Load available datasets
   useEffect(() => {
@@ -203,7 +233,12 @@ const EmployeeChatPage = () => {
     try {
       // Try to get real response from backend
       if (dsId) {
-        const response = await askQuery(dsId, msg, selectedModel);
+        // Check if we have an approved access request for this dataset
+        const reqs = JSON.parse(localStorage.getItem('datasetAccessRequests') || '[]');
+        const user = localStorage.getItem('userName') || 'Employee User';
+        const isApproved = reqs.some(r => r.datasetId === dsId && r.user === user && r.status === 'approved');
+
+        const response = await askQuery(dsId, msg, selectedModel, 'employee', isApproved);
         let answer = response?.answer || "I'm sorry, I couldn't compute an answer for that.";
         
         // Check for image-related errors
@@ -413,6 +448,37 @@ const EmployeeChatPage = () => {
                       boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
                     }}>
                       {isUser ? <p style={{ margin: 0 }}>{msg.content}</p> : <RichText text={msg.content} />}
+                      
+                      {!isUser && msg.content && msg.content.includes('Access Denied') && msg.content.includes('permission') && (
+                        <div style={{ marginTop: '0.75rem' }}>
+                          {accessRequests[msg.id] === 'approved' ? (
+                            <div style={{ color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', fontWeight: 600, padding: '0.4rem 0' }}>
+                              <Check size={14} /> Admin access granted! You may now retry your command.
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleRequestAccess(msg.id)}
+                              disabled={accessRequests[msg.id] === 'requested'}
+                              style={{
+                                background: accessRequests[msg.id] === 'requested' ? 'rgba(88,166,255,0.2)' : 'linear-gradient(135deg, #1f6feb, #58a6ff)',
+                                border: 'none',
+                                borderRadius: '6px',
+                                padding: '0.4rem 0.8rem',
+                                color: '#fff',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                cursor: accessRequests[msg.id] === 'requested' ? 'default' : 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.4rem',
+                                transition: 'all 0.2s',
+                              }}
+                            >
+                              {accessRequests[msg.id] === 'requested' ? 'Access Requested...' : 'Request Admin Access'}
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                     )}
                     {!isImageError && <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--text-muted)', marginTop: 4, padding: '0 2px', textAlign: isUser ? 'right' : 'left' }}>{msg.time}</div>}

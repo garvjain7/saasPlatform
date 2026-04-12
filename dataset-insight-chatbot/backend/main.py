@@ -697,6 +697,19 @@ async def internal_query(req: InternalQueryRequest):
     # Format result
     if modify and isinstance(result, pd.DataFrame):
         _cache[cache_key] = result
+        
+        # Persist to disk
+        try:
+            ext = fp.suffix.lower()
+            if ext in (".csv", ".txt"):
+                result.to_csv(fp, index=False)
+            elif ext in (".xlsx", ".xls"):
+                result.to_excel(fp, index=False)
+            elif ext == ".json":
+                result.to_json(fp, orient="records")
+        except Exception as e:
+            print(f"Warning: Failed to save changes to disk: {e}")
+            
         result_str = f"Dataset updated. New shape: {result.shape[0]} rows × {result.shape[1]} columns."
     elif isinstance(result, pd.DataFrame):
         result_str = result.head(MAX_RESULT_ROWS).to_string(index=False)

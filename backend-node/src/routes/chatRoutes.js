@@ -13,10 +13,10 @@ const wrapWithActivity = (handler) => {
     const datasetId = req.body.datasetId;
     
     try {
-      const userId = req.user?.userId || req.user?.email;
+      const userId = req.user?.id || req.user?.userId || req.user?.email;
       const userEmail = req.user?.email;
       
-      let userName = userEmail?.split('@')[0] || 'Unknown';
+      let userName = req.user?.name || userEmail?.split('@')[0] || 'Unknown';
       let datasetName = datasetId;
       
       if (userId && datasetId) {
@@ -55,7 +55,8 @@ const wrapWithActivity = (handler) => {
           req.activityDatasetName || datasetId,
           req.body.message || req.body.question || 'Query',
           data.success ? 'ok' : 'failed',
-          duration
+          duration,
+          data.intent
         ).catch(console.error);
       }
       

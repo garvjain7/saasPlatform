@@ -111,11 +111,13 @@ export const getDatasetAnalysis = async (datasetId) => {
     return response.data;
 };
 
-export const askQuery = async (datasetId, question, model = 'groq') => {
+export const askQuery = async (datasetId, question, model = 'groq', portal = null, isApproved = false) => {
     const response = await api.post('/query', {
         datasetId: datasetId,
         question: question,
         model: model,
+        portal: portal,
+        isApproved: isApproved,
     });
     return response.data;
 };

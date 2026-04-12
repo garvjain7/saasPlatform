@@ -22,7 +22,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background-image: 
+    background-image:
         radial-gradient(circle at 20% 30%, rgba(88, 166, 255, 0.05) 0%, transparent 40%),
         radial-gradient(circle at 80% 70%, rgba(188, 140, 255, 0.04) 0%, transparent 40%);
     pointer-events: none;
@@ -217,6 +217,7 @@
         opacity: 0;
         transform: translateY(-10px);
     }
+
     100% {
         opacity: 1;
         transform: translateY(0);
@@ -292,6 +293,7 @@
         opacity: 0;
         transform: translateY(15px);
     }
+
     100% {
         opacity: 1;
         transform: translateY(0);
@@ -370,7 +372,7 @@
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid rgba(48, 54, 61, 0.8);
     border-radius: 16px;
-    box-shadow: 
+    box-shadow:
         0 8px 32px rgba(0, 0, 0, 0.3),
         inset 0 1px 0 rgba(255, 255, 255, 0.04);
     transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
@@ -378,7 +380,7 @@
 
 .glass-panel:hover {
     border-color: rgba(88, 166, 255, 0.2);
-    box-shadow: 
+    box-shadow:
         0 12px 40px rgba(0, 0, 0, 0.4),
         inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
@@ -557,16 +559,28 @@
     animation: cardFadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.emp-stat-card:nth-child(1) { animation-delay: 0.04s; }
-.emp-stat-card:nth-child(2) { animation-delay: 0.08s; }
-.emp-stat-card:nth-child(3) { animation-delay: 0.12s; }
-.emp-stat-card:nth-child(4) { animation-delay: 0.16s; }
+.emp-stat-card:nth-child(1) {
+    animation-delay: 0.04s;
+}
+
+.emp-stat-card:nth-child(2) {
+    animation-delay: 0.08s;
+}
+
+.emp-stat-card:nth-child(3) {
+    animation-delay: 0.12s;
+}
+
+.emp-stat-card:nth-child(4) {
+    animation-delay: 0.16s;
+}
 
 @keyframes cardFadeUp {
     0% {
         opacity: 0;
         transform: translateY(20px);
     }
+
     100% {
         opacity: 1;
         transform: translateY(0);
@@ -809,8 +823,17 @@
 }
 
 @keyframes connectionPulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.6; transform: scale(0.9); }
+
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.6;
+        transform: scale(0.9);
+    }
 }
 
 .emp-connection-info {
@@ -971,8 +994,13 @@
 }
 
 @keyframes modalFadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 .emp-modal {
@@ -990,6 +1018,7 @@
         opacity: 0;
         transform: translateY(20px) scale(0.98);
     }
+
     to {
         opacity: 1;
         transform: translateY(0) scale(1);
@@ -1177,8 +1206,15 @@
 }
 
 @keyframes iconFloat {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-8px); }
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-8px);
+    }
 }
 
 .emp-cleaning-title {
@@ -1228,8 +1264,13 @@
 }
 
 @keyframes progressMove {
-    from { width: 35%; }
-    to { width: 55%; }
+    from {
+        width: 35%;
+    }
+
+    to {
+        width: 55%;
+    }
 }
 
 .emp-cleaning-progress-label {
@@ -1255,15 +1296,15 @@
     .emp-sidebar {
         width: 220px;
     }
-    
+
     .emp-charts-row {
         grid-template-columns: 1fr;
     }
-    
+
     .emp-chart-wide {
         grid-column: span 1;
     }
-    
+
     .emp-dataset-grid {
         grid-template-columns: 1fr;
     }
@@ -1273,7 +1314,7 @@
     .emp-layout {
         flex-direction: column;
     }
-    
+
     .emp-sidebar {
         width: 100%;
         flex-direction: row;
@@ -1282,23 +1323,23 @@
         border-right: none;
         border-bottom: 1px solid rgba(48, 54, 61, 0.6);
     }
-    
+
     .emp-sidebar-logo {
         margin-bottom: 0;
         margin-right: 1rem;
     }
-    
+
     .emp-nav {
         flex-direction: row;
         overflow-x: auto;
         gap: 0.5rem;
     }
-    
+
     .emp-nav-item {
         padding: 0.5rem 0.75rem;
         white-space: nowrap;
     }
-    
+
     .emp-user-section {
         border-top: none;
         border-left: 1px solid rgba(48, 54, 61, 0.6);
@@ -1307,32 +1348,32 @@
         margin-top: 0;
         margin-left: 1rem;
     }
-    
+
     .emp-main {
         padding: 1rem;
     }
-    
+
     .emp-topbar {
         flex-direction: column;
         align-items: flex-start;
         gap: 1rem;
     }
-    
+
     .emp-topbar-actions {
         width: 100%;
         flex-wrap: wrap;
     }
-    
+
     .emp-search-bar {
         width: 100%;
         min-width: auto;
     }
-    
+
     .emp-connection-banner {
         flex-direction: column;
         align-items: flex-start;
     }
-    
+
     .emp-connection-actions {
         width: 100%;
         justify-content: flex-end;
@@ -1343,16 +1384,16 @@
     .emp-stats-grid {
         grid-template-columns: 1fr;
     }
-    
+
     .emp-filters {
         flex-direction: column;
         align-items: flex-start;
     }
-    
+
     .emp-filter-divider {
         display: none;
     }
-    
+
     .emp-filter-count {
         margin-left: 0;
         margin-top: 0.5rem;

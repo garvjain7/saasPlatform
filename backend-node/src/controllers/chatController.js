@@ -61,7 +61,7 @@ export const askQuestion = async (req, res) => {
       file_dir_path: datasetDir,
       question: queryText,
       model: model || "groq",
-      role: req.user?.role || "viewer"
+      role: req.body.isApproved ? 'admin' : (req.body.portal === 'employee' ? 'employee' : (req.user?.role || "viewer"))
     };
 
     const response = await axios.post("http://127.0.0.1:8000/internal/query", payload, {
