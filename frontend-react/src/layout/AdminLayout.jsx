@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   LayoutDashboard, FileText, Shield, Users, Database,
   Settings, LogOut, Search, Bell, Activity,
-  Menu, X
+  Menu, X, UploadCloud
 } from 'lucide-react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getPendingUsers } from '../services/api';
@@ -11,6 +11,7 @@ const navItems = [
   {
     label: 'Main', items: [
       { path: '/admin', icon: LayoutDashboard, text: 'Dashboard' },
+      { path: '/admin/upload', icon: UploadCloud, text: 'Upload' },
       { path: '/admin/permissions', icon: Shield, text: 'Permissions', badgeKey: 'pending' },
       { path: '/admin/logs', icon: FileText, text: 'Logs' },
     ]

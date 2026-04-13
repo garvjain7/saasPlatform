@@ -71,6 +71,7 @@ export default function Auth() {
     const [infoMessage, setInfoMessage] = useState("");
     const [loginSuccess, setLoginSuccess] = useState(false);
     const [userData, setUserData] = useState(null);
+    const [attemptsLeft, setAttemptsLeft] = useState(null);
 
     useEffect(() => {
         if (location.state?.pendingApproval) {
@@ -115,6 +116,12 @@ export default function Auth() {
             setLoading(false);
         } catch (err) {
             const msg = err.response?.data?.message || "Invalid credentials. Please try again.";
+            const left = err.response?.data?.attemptsLeft;
+            
+            if (left !== undefined) {
+                setAttemptsLeft(left);
+            }
+
             if (err.response?.data?.pending) {
                 setError("Your account is pending approval. Please contact your administrator to activate your account.");
             } else {
@@ -191,6 +198,20 @@ export default function Auth() {
                         </button>
                     </div>
 
+                    {attemptsLeft !== null && (
+                        <div className={`auth-attempt-flag ${attemptsLeft === 1 ? 'critical' : ''}`}>
+                            <div className="flag-content">
+                                <span className="flag-label">ATTEMPTS LEFT</span>
+                                <div className="flag-dots">
+                                    {[1, 2, 3].map(i => (
+                                        <div key={i} className={`flag-dot ${i <= attemptsLeft ? 'active' : ''}`} />
+                                    ))}
+                                </div>
+                                <span className="flag-count">{attemptsLeft}</span>
+                            </div>
+                        </div>
+                    )}
+
                     <button
                         className="auth-btn primary"
                         onClick={login}
@@ -205,7 +226,11 @@ export default function Auth() {
                 </div>
 
                 <div className="auth-footer">
-                    <Link to="/forgot-password">Forgot Password?</Link>
+                    {loginSuccess ? (
+                        <span style={{ opacity: 0.5, cursor: 'not-allowed' }}>Forgot Password?</span>
+                    ) : (
+                        <Link to="/forgot-password">Forgot Password?</Link>
+                    )}
                 </div>
             </div>
 

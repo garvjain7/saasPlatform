@@ -151,7 +151,7 @@ const VisualizationPage = () => {
       try {
         const res = await getDatasets();
         if (res.success && res.data) {
-          const readyDatasets = res.data.filter(d => d.status === 'completed' || d.status === 'ready');
+          const readyDatasets = res.data.filter(d => d.status === 'completed' || d.status === 'ready' || d.status === 'cleaned');
           setAvailableDatasets(readyDatasets);
           
           if (!datasetId && readyDatasets.length > 0) {

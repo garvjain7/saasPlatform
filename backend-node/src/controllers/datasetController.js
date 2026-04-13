@@ -48,11 +48,11 @@ export const getAllDatasets = async (req, res) => {
     const params = [companyId];
 
     if (isEmployee) {
-      query += `, CASE WHEN p.can_view = TRUE THEN TRUE ELSE FALSE END AS has_access `;
+      query += `, TRUE AS has_access `;
       query += ` FROM datasets d
                  LEFT JOIN users u ON d.uploaded_by = u.user_id
-                 LEFT JOIN permissions p ON d.dataset_id = p.dataset_id AND p.user_id = $2
-                 WHERE d.company_id = $1 `;
+                 INNER JOIN permissions p ON d.dataset_id = p.dataset_id
+                 WHERE d.company_id = $1 AND p.user_id = $2 AND p.can_view = TRUE `;
       params.push(user.user_id);
     } else {
       query += ` FROM datasets d
@@ -280,15 +280,35 @@ export const getDatasetPreview = async (req, res) => {
     const dsResult = await pool.query("SELECT file_name, upload_status, schema_json FROM datasets WHERE dataset_id = $1", [datasetId]);
     const { file_name, upload_status, schema_json } = dsResult.rows[0];
 
-    const paths = getDatasetPaths(datasetId, file_name);
-    // Prefer working file if it exists, otherwise use raw
+    const fullName = await pool.query("SELECT full_name FROM users WHERE email = $1", [userEmail]).then(r => r.rows[0]?.full_name);
+    const paths = getDatasetPaths(datasetId, file_name, fullName);
+    // Resolution Priority: Temp (latest working) > Cleaned (final) > Raw (fallback)
     let targetPath = paths.raw;
     const fs = (await import("fs/promises")).default;
+    
+    // 1. Check if ANY temp file exists for this dataset (to support global Cleaning status)
+    // Actually, for preview, we should try to find the specific user's temp file first, 
+    // or the most recent temp file for this dataset.
+    const tempDir = path.resolve(process.cwd(), "..", "uploads", "temp");
     try {
-      await fs.access(paths.working);
-      targetPath = paths.working;
+      const files = await fs.readdir(tempDir);
+      const dsTempFiles = files.filter(f => f.startsWith(datasetId) && f.endsWith(".csv"));
+      if (dsTempFiles.length > 0) {
+        // Find current user's temp file if exists, otherwise take the first one
+        const userTempFile = dsTempFiles.find(f => f.includes(fullName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()));
+        targetPath = path.join(tempDir, userTempFile || dsTempFiles[0]);
+      } else {
+        // 2. Check Cleaned
+        try {
+          await fs.access(paths.cleaned);
+          targetPath = paths.cleaned;
+        } catch {
+          // 3. Fallback to Raw
+          targetPath = paths.raw;
+        }
+      }
     } catch {
-      if (upload_status === 'completed') targetPath = paths.cleaned;
+      targetPath = paths.raw;
     }
 
     const totalRows = await countLines(targetPath);
@@ -376,19 +396,29 @@ export const downloadDataset = async (req, res) => {
 
     const fileName = dsResult.rows[0].file_name;
     const originalName = dsResult.rows[0].dataset_name;
-    const paths = getDatasetPaths(datasetId, fileName);
+    const fullName = await pool.query("SELECT full_name FROM users WHERE email = $1", [userEmail]).then(r => r.rows[0]?.full_name);
+    const paths = getDatasetPaths(datasetId, fileName, fullName);
     
-    // Serve the most actualized file
+    // Serve the most actualized file (Sync with getDatasetPreview logic)
     let filePath = paths.raw;
     const fs = (await import("fs/promises")).default;
+    const tempDir = path.resolve(process.cwd(), "..", "uploads", "temp");
     try {
-      await fs.access(paths.working);
-      filePath = paths.working;
+      const files = await fs.readdir(tempDir);
+      const dsTempFiles = files.filter(f => f.startsWith(datasetId) && f.endsWith(".csv"));
+      if (dsTempFiles.length > 0) {
+        const userTempFile = dsTempFiles.find(f => f.includes(fullName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()));
+        filePath = path.join(tempDir, userTempFile || dsTempFiles[0]);
+      } else {
+        try {
+          await fs.access(paths.cleaned);
+          filePath = paths.cleaned;
+        } catch {
+          filePath = paths.raw;
+        }
+      }
     } catch {
-      try {
-        await fs.access(paths.cleaned);
-        filePath = paths.cleaned;
-      } catch {}
+      filePath = paths.raw;
     }
 
     // 3. Send file
@@ -426,7 +456,7 @@ export const getDatasetAssignments = async (req, res) => {
 
 export const updateDatasetStatus = async (req, res) => {
   const { status } = req.body;
-  const allowedStatus = ["uploaded", "processing", "completed", "failed", "ready", "trained"];
+  const allowedStatus = ["not_cleaned", "cleaning", "cleaned", "failed", "processing", "completed"]; // Added new types, keeping legacy for compatibility during migration
 
   if (!allowedStatus.includes(status)) {
     return res.status(400).json({ success: false, message: `Invalid status value: ${status}` });
@@ -468,28 +498,37 @@ export const transformDataset = async (req, res) => {
 
     const dsRes = await pool.query("SELECT file_name FROM datasets WHERE dataset_id = $1", [datasetId]);
     const { file_name } = dsRes.rows[0];
-    const paths = getDatasetPaths(datasetId, file_name);
+    const fullName = user.full_name || "unknown_user";
+    const paths = getDatasetPaths(datasetId, file_name, fullName);
 
     const fs = (await import("fs/promises")).default;
-    // Ensure working file exists
+    const tempDir = path.resolve(process.cwd(), "..", "uploads", "temp");
+    await fs.mkdir(tempDir, { recursive: true });
+
+    // Ensure temp file exists (Resume logic)
     try {
-      await fs.access(paths.working);
+      await fs.access(paths.temp);
     } catch {
-      await fs.copyFile(paths.raw, paths.working);
+      // If no temp file, start from either Cleaned (if re-cleaning) or Raw
+      let sourcePath = paths.raw;
+      try { await fs.access(paths.cleaned); sourcePath = paths.cleaned; } catch {}
+      await fs.copyFile(sourcePath, paths.temp);
     }
+
+    // Set status to cleaning
+    await pool.query("UPDATE datasets SET upload_status = 'cleaning', updated_at = NOW() WHERE dataset_id = $1", [datasetId]);
 
     // Call Python transformer
     const { spawn } = await import("child_process");
-    const path = await import("path");
-    const transformerScript = path.resolve(process.cwd(), "..", "ml_engine", "pipeline", "transformer.py");
+    const pathMod = await import("path");
+    const transformerScript = pathMod.resolve(process.cwd(), "..", "ml_engine", "pipeline", "transformer.py");
     
-    // Use a temp file for safety (rollback on failure)
-    const tempWorking = paths.working + ".tmp";
+    const tempOutputFile = paths.temp + ".next";
     
     const pythonProcess = spawn("python", [
       transformerScript,
-      "--input", paths.working,
-      "--output", tempWorking,
+      "--input", paths.temp,
+      "--output", tempOutputFile,
       "--config", JSON.stringify({ type, params })
     ]);
 
@@ -501,20 +540,24 @@ export const transformDataset = async (req, res) => {
         try {
           const result = JSON.parse(stdout.trim());
           if (result.status === "success") {
-            await fs.rename(tempWorking, paths.working);
+            await fs.rename(tempOutputFile, paths.temp);
             return res.json({ success: true, message: "Transformation applied", stats: result });
           } else {
             throw new Error(result.message);
           }
         } catch (err) {
-          await fs.unlink(tempWorking).catch(() => {});
-          await fs.unlink(paths.working).catch(() => {}); // Rigid rollback to Raw Data state
+          await fs.unlink(tempOutputFile).catch(() => {});
+          // SYSTEM ERROR ROLLBACK: Delete temp file if the script itself failed to produce valid JSON or logic
+          await fs.unlink(paths.temp).catch(() => {});
+          await pool.query("UPDATE datasets SET upload_status = 'not_cleaned', updated_at = NOW() WHERE dataset_id = $1", [datasetId]);
           return res.status(500).json({ success: false, message: err.message });
         }
       } else {
-        await fs.unlink(tempWorking).catch(() => {});
-        await fs.unlink(paths.working).catch(() => {}); // Rigid rollback to Raw Data state
-        return res.status(500).json({ success: false, message: "Python transformation failed" });
+        await fs.unlink(tempOutputFile).catch(() => {});
+        // SYSTEM ERROR ROLLBACK: Delete temp file and reset status
+        await fs.unlink(paths.temp).catch(() => {});
+        await pool.query("UPDATE datasets SET upload_status = 'not_cleaned', updated_at = NOW() WHERE dataset_id = $1", [datasetId]);
+        return res.status(500).json({ success: false, message: "Python transformation failed (System Error)" });
       }
     });
 
@@ -537,13 +580,17 @@ export const finalizeDataset = async (req, res) => {
 
     const dsRes = await pool.query("SELECT file_name FROM datasets WHERE dataset_id = $1", [datasetId]);
     const { file_name } = dsRes.rows[0];
-    const paths = getDatasetPaths(datasetId, file_name);
+    const fullName = user.full_name || "unknown_user";
+    const paths = getDatasetPaths(datasetId, file_name, fullName);
 
     const fs = (await import("fs/promises")).default;
     await fs.mkdir(path.dirname(paths.cleaned), { recursive: true });
-    await fs.rename(paths.working, paths.cleaned);
+    
+    // Copy to cleaned, then unlink temp
+    await fs.copyFile(paths.temp, paths.cleaned);
+    await fs.unlink(paths.temp).catch(() => {});
 
-    await pool.query("UPDATE datasets SET upload_status = 'completed', updated_at = NOW() WHERE dataset_id = $1", [datasetId]);
+    await pool.query("UPDATE datasets SET upload_status = 'cleaned', updated_at = NOW() WHERE dataset_id = $1", [datasetId]);
     
     // Log Activity
     await pool.query(

@@ -45,7 +45,10 @@ export const login = async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ message: "Invalid email or password" });
+      return res.status(401).json({ 
+        message: "Invalid email or password. 3 attempts left.", 
+        attemptsLeft: 3 
+      });
     }
 
     const user = result.rows[0];
@@ -56,7 +59,8 @@ export const login = async (req, res) => {
       const remainingMins = Math.ceil(remainingMs / 60000);
       return res.status(401).json({ 
         message: `Too many failed attempts. Try again after ${remainingMins} minute${remainingMins !== 1 ? 's' : ''}.`,
-        locked: true 
+        locked: true,
+        attemptsLeft: 0
       });
     }
 
@@ -72,18 +76,24 @@ export const login = async (req, res) => {
       const params = [newAttempts, user.user_id];
       
       let lockoutMessage = "";
+      let attemptsLeft = 0;
+
       if (newAttempts >= 3) {
         updateQuery += ", lock_until = NOW() + INTERVAL '5 minutes'";
         lockoutMessage = "Too many failed attempts. Try again after 5 minutes.";
+        attemptsLeft = 0;
       } else {
-        const left = 3 - newAttempts;
-        lockoutMessage = `Invalid email or password. ${left} attempt${left !== 1 ? 's' : ''} left.`;
+        attemptsLeft = 3 - newAttempts;
+        lockoutMessage = `Invalid email or password. ${attemptsLeft} attempt${attemptsLeft !== 1 ? 's' : ''} left.`;
       }
       
       updateQuery += " WHERE user_id = $2";
       await pool.query(updateQuery, params);
       
-      return res.status(401).json({ message: lockoutMessage });
+      return res.status(401).json({ 
+        message: lockoutMessage, 
+        attemptsLeft: attemptsLeft 
+      });
     }
 
     // SUCCESS - Reset attempts and update last_login

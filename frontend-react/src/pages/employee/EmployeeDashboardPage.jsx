@@ -33,12 +33,16 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 const StatusBadge = ({ status }) => {
   const config = {
-    completed: { color: '#3fb950', bg: 'rgba(63,185,80,0.1)', icon: CheckCircle2, label: 'Ready' },
-    processing: { color: '#d29922', bg: 'rgba(210,153,34,0.1)', icon: Loader, label: 'Processing' },
+    cleaned: { color: '#3fb950', bg: 'rgba(63,185,80,0.1)', icon: CheckCircle2, label: 'Cleaned' },
+    processing: { color: '#d29922', bg: 'rgba(210,153,34,0.1)', icon: Loader, label: 'Cleaning' },
+    cleaning: { color: '#d29922', bg: 'rgba(210,153,34,0.1)', icon: Loader, label: 'Cleaning' },
     failed: { color: '#f85149', bg: 'rgba(248,81,73,0.1)', icon: AlertCircle, label: 'Failed' },
-    ready: { color: '#3fb950', bg: 'rgba(63,185,80,0.1)', icon: CheckCircle2, label: 'Ready' },
+    not_cleaned: { color: 'rgba(139,148,158,0.8)', bg: 'rgba(139,148,158,0.1)', icon: Database, label: 'Not Cleaned' },
+    // Legacy
+    completed: { color: '#3fb950', bg: 'rgba(63,185,80,0.1)', icon: CheckCircle2, label: 'Cleaned' },
+    ready: { color: '#3fb950', bg: 'rgba(63,185,80,0.1)', icon: CheckCircle2, label: 'Cleaned' },
   };
-  const c = config[status] || config.completed;
+  const c = config[status] || config.cleaned;
   const Icon = c.icon;
   return (
     <span style={{
@@ -79,13 +83,13 @@ const EmployeeDashboardPage = () => {
 
   // Compute stats from real datasets
   const totalDatasets = datasets.length;
-  const readyDatasets = datasets.filter(d => d.status === 'completed' || d.status === 'ready');
-  const processingDatasets = datasets.filter(d => d.status === 'processing');
+  const readyDatasets = datasets.filter(d => d.status === 'completed' || d.status === 'ready' || d.status === 'cleaned');
+  const processingDatasets = datasets.filter(d => d.status === 'processing' || d.status === 'cleaning');
   const failedDatasets = datasets.filter(d => d.status === 'failed');
 
   // Status distribution for pie chart
   const statusData = [
-    { name: 'Ready', value: readyDatasets.length, color: '#3fb950' },
+    { name: 'Cleaned', value: readyDatasets.length, color: '#3fb950' },
     { name: 'Processing', value: processingDatasets.length, color: '#d29922' },
     { name: 'Failed', value: failedDatasets.length, color: '#f85149' },
   ].filter(d => d.value > 0);
@@ -108,7 +112,6 @@ const EmployeeDashboardPage = () => {
 
   // Quick actions
   const quickActions = [
-    { icon: Upload, label: 'Upload Dataset', desc: 'Upload CSV or Excel files', path: '/employee/upload', color: '#58a6ff' },
     { icon: Database, label: 'My Datasets', desc: 'View all processed datasets', path: '/employee/datasets', color: '#3fb950' },
     { icon: Sparkles, label: 'Analysis', desc: 'Deep-dive into your data', path: '/employee/analysis', color: '#bc8cff' },
     { icon: BarChart3, label: 'Visualization', desc: 'Charts, graphs & filters', path: '/employee/visualization', color: '#d29922' },
@@ -146,16 +149,10 @@ const EmployeeDashboardPage = () => {
               <div style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6 }}>
                 {totalDatasets === 0
                   ? 'Welcome to DataInsights.ai! Upload your first dataset to get started with automated analytics.'
-                  : `You have ${totalDatasets} dataset${totalDatasets !== 1 ? 's' : ''} — ${readyDatasets.length} ready for analysis${processingDatasets.length > 0 ? `, ${processingDatasets.length} processing` : ''}.`
+                  : `You have ${totalDatasets} dataset${totalDatasets !== 1 ? 's' : ''} — ${readyDatasets.length} cleaned and ready for analysis${processingDatasets.length > 0 ? `, ${processingDatasets.length} in progress` : ''}.`
                 }
               </div>
             </div>
-            {totalDatasets === 0 && (
-              <button className="emp-btn emp-btn-primary" onClick={() => navigate('/employee/upload')}
-                style={{ padding: '10px 24px', fontSize: 13, flexShrink: 0 }}>
-                <Upload size={16} /> Upload First Dataset
-              </button>
-            )}
           </div>
         </div>
 
@@ -166,7 +163,7 @@ const EmployeeDashboardPage = () => {
         }}>
           {[
             { icon: Database, label: 'Total Datasets', value: totalDatasets, color: '#58a6ff', sub: 'All time' },
-            { icon: CheckCircle2, label: 'Ready for Analysis', value: readyDatasets.length, color: '#3fb950', sub: totalDatasets > 0 ? `${Math.round((readyDatasets.length/totalDatasets)*100)}%` : '0%' },
+            { icon: CheckCircle2, label: 'Cleaned Data', value: readyDatasets.length, color: '#3fb950', sub: totalDatasets > 0 ? `${Math.round((readyDatasets.length/totalDatasets)*100)}%` : '0%' },
             { icon: Loader, label: 'Processing', value: processingDatasets.length, color: '#d29922', sub: 'In queue' },
             { icon: AlertCircle, label: 'Failed', value: failedDatasets.length, color: '#f85149', sub: totalDatasets > 0 ? `${Math.round((failedDatasets.length/totalDatasets)*100)}%` : '0%' },
           ].map((kpi, i) => {
@@ -205,7 +202,7 @@ const EmployeeDashboardPage = () => {
               </div>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 18, fontWeight: 700, color: '#3fb950' }}>{readyDatasets.length}</div>
-                <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: "'DM Mono', monospace" }}>Ready</div>
+                <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: "'DM Mono', monospace" }}>Cleaned</div>
               </div>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 18, fontWeight: 700, color: '#d29922' }}>{processingDatasets.length}</div>
@@ -363,7 +360,7 @@ const EmployeeDashboardPage = () => {
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>Recent Datasets</div>
               <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>
-                {totalDatasets} total · {readyDatasets.length} ready for analysis
+                {totalDatasets} total · {readyDatasets.length} cleaned
               </div>
             </div>
             <button className="emp-btn emp-btn-ghost emp-btn-sm" onClick={() => navigate('/employee/datasets')}>
@@ -378,11 +375,7 @@ const EmployeeDashboardPage = () => {
             </div>
           ) : datasets.length === 0 ? (
             <div style={{ padding: '3rem', textAlign: 'center' }}>
-              <Database size={40} color="var(--text-muted)" style={{ marginBottom: 12, opacity: 0.4 }} />
               <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>No datasets uploaded yet</p>
-              <button className="emp-btn emp-btn-primary" onClick={() => navigate('/employee/upload')}>
-                <Upload size={14} /> Upload Your First Dataset
-              </button>
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
@@ -399,7 +392,7 @@ const EmployeeDashboardPage = () => {
                   {datasets.slice(0, 8).map((ds, i) => {
                     const dsId = ds.dataset_id || ds.id;
                     const dsName = ds.name || ds.filename || 'Unnamed';
-                    const isReady = ds.status === 'completed' || ds.status === 'ready';
+                    const isReady = ds.status === 'completed' || ds.status === 'ready' || ds.status === 'cleaned';
                     return (
                       <tr key={dsId || i} style={{
                         animation: `adminSlideIn 0.4s cubic-bezier(0.16,1,0.3,1) ${0.1 + i * 0.04}s both`,
@@ -434,10 +427,6 @@ const EmployeeDashboardPage = () => {
                                 <Sparkles size={10} /> Clean
                               </button>
                             )}
-                            <button className="emp-btn emp-btn-ghost emp-btn-sm" style={{ fontSize: 9, padding: '4px 10px' }}
-                              onClick={() => navigate(`/employee/cleaning?ds=${dsId}&name=${encodeURIComponent(dsName)}`)}>
-                              <Sparkles size={10} /> Clean
-                            </button>
                           </div>
                         </td>
                       </tr>

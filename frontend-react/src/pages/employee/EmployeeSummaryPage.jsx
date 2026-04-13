@@ -54,7 +54,7 @@ const EmployeeSummaryPage = () => {
       try {
         const res = await getDatasets();
         if (res.success && res.data) {
-          const readyDatasets = res.data.filter(d => d.status === 'completed' || d.status === 'ready');
+          const readyDatasets = res.data.filter(d => d.status === 'completed' || d.status === 'ready' || d.status === 'cleaned');
           setAvailableDatasets(readyDatasets);
           
           if (!datasetId && readyDatasets.length > 0) {
@@ -238,10 +238,10 @@ const EmployeeSummaryPage = () => {
               }}>📊</div>
               <div>
                 <div style={{ fontSize: 22, fontWeight: 600, color: '#fff', lineHeight: 1.2 }}>{currentDataset.name}</div>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>Processed · Cleaned · Ready for analysis</div>
+                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>Processed · Cleaned · Analysis Ready</div>
               </div>
               <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, padding: '4px 10px', borderRadius: 20, background: 'rgba(63,185,80,0.08)', color: 'var(--success)' }}>● Ready</span>
+                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, padding: '4px 10px', borderRadius: 20, background: 'rgba(63,185,80,0.08)', color: 'var(--success)' }}>● Cleaned</span>
                 <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, padding: '4px 10px', borderRadius: 20, background: 'rgba(88,166,255,0.08)', color: 'var(--primary)' }}>Chatbot Unlocked</span>
               </div>
             </div>
@@ -268,7 +268,7 @@ const EmployeeSummaryPage = () => {
                 { val: datasetData?.rows?.toLocaleString() || '—', lbl: 'Total Rows' }, 
                 { val: datasetData?.columns || '—', lbl: 'Columns' }, 
                 { val: schema.length, lbl: 'Attributes' },
-                { val: selectedDataset?.status === 'completed' ? 'Completed' : 'Ready', lbl: 'Status', color: 'var(--success)' },
+                { val: selectedDataset?.status === 'completed' || selectedDataset?.status === 'ready' || selectedDataset?.status === 'cleaned' ? 'Cleaned' : 'Processing', lbl: 'Status', color: 'var(--success)' },
               ].map((m, i) => (
                 <div key={i} style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: 20, fontWeight: 600, color: m.color || '#fff' }}>{m.val}</div>

@@ -28,14 +28,18 @@ export async function validateDatasetAccess(userId, datasetId, role) {
  * Returns standardized paths for dataset files.
  * @param {string} datasetId - UUID of the dataset.
  * @param {string} fileName - Original sanitized filename or generated unique name.
+ * @param {string} fullName - Full name of the user (used for temp files).
  */
-export function getDatasetPaths(datasetId, fileName) {
+export function getDatasetPaths(datasetId, fileName, fullName = null) {
   const rootDir = process.cwd();
   const uploadsDir = path.resolve(rootDir, "..", "uploads");
   
+  const sanitizedFullName = fullName ? fullName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase() : 'unknown';
+
   return {
     raw: path.join(uploadsDir, "raw", fileName),
-    working: path.join(uploadsDir, "raw", `working_${datasetId}.csv`),
+    temp: fullName ? path.join(uploadsDir, "temp", `${datasetId}_${sanitizedFullName}.csv`) : null,
+    working: path.join(uploadsDir, "raw", `working_${datasetId}.csv`), // Legacy working path (deprecating)
     cleaned: path.join(uploadsDir, "cleaned", `cleaned_${datasetId}.csv`),
     artifacts: path.resolve(rootDir, "..", "ml_engine", "artifacts", datasetId)
   };

@@ -24,8 +24,8 @@ const EmployeeLayout = ({ children }) => {
 
   useEffect(() => {
     getMe().then(user => {
-      if (user && user.name) {
-        setUserName(user.name);
+      if (user && (user.full_name || user.name)) {
+        setUserName(user.full_name || user.name);
       } else if (user && user.email) {
         setUserName(user.email.split('@')[0]);
       }

@@ -37,8 +37,12 @@
     padding: 1.5rem 1rem;
     display: flex;
     flex-direction: column;
-    position: relative;
-    z-index: 10;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    z-index: 100;
+    overflow: hidden;
     backdrop-filter: blur(12px);
 }
 
@@ -191,6 +195,7 @@
 
 /* Main Content */
 .emp-main {
+    margin-left: 260px;
     flex: 1;
     padding: 2rem;
     overflow: auto;

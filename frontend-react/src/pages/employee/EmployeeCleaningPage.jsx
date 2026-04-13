@@ -606,7 +606,7 @@ const EmployeeCleaningPage = () => {
             ) : tableRows.length === 0 ? (
               <div style={{ padding: 60, textAlign: 'center', color: 'var(--ink3)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, marginTop: 40 }}>
                 <div style={{ fontSize: 18, color: 'var(--ink)' }}>No Dataset Selected</div>
-                <div style={{ fontSize: 12 }}>You haven't selected a dataset to clean yet. Please choose or upload one to get started.</div>
+                <div style={{ fontSize: 12 }}>You haven't selected a dataset to clean yet. Please choose one to get started.</div>
                 <button 
                   className="clean-btn clean-btn-primary" 
                   onClick={() => navigate('/employee/datasets')}

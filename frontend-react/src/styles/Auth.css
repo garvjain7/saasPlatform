@@ -645,6 +645,76 @@
     to { transform: rotate(360deg); }
 }
 
+/* Attempt Flag Header */
+.auth-attempt-flag {
+    background: rgba(13, 17, 23, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    margin-top: 0.5rem;
+    animation: fadeIn 0.4s ease-out;
+    position: relative;
+    overflow: hidden;
+}
+
+.auth-attempt-flag.critical {
+    border-color: rgba(248, 81, 73, 0.4);
+    background: rgba(248, 81, 73, 0.05);
+    animation: errorShake 0.5s ease;
+}
+
+.flag-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.flag-label {
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: rgba(139, 148, 158, 0.7);
+    letter-spacing: 0.1em;
+}
+
+.flag-dots {
+    display: flex;
+    gap: 6px;
+    flex: 1;
+    justify-content: center;
+}
+
+.flag-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    transition: all 0.4s ease;
+}
+
+.flag-dot.active {
+    background: #58a6ff;
+    box-shadow: 0 0 8px #58a6ff;
+}
+
+.critical .flag-dot.active {
+    background: #f85149;
+    box-shadow: 0 0 8px #f85149;
+}
+
+.flag-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #fff;
+    min-width: 12px;
+    text-align: right;
+}
+
+.critical .flag-count {
+    color: #f85149;
+}
+
 /* ═════════════════════════════════════════════════════════════
    Role Selection Page - Enhanced
    ═════════════════════════════════════════════════════════════ */

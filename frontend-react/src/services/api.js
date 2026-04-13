@@ -31,7 +31,7 @@ export const getMe = async () => {
         if (response.data.success) {
             const user = response.data.user;
             sessionStorage.setItem('role', user.role);
-            sessionStorage.setItem('userName', user.name);
+            sessionStorage.setItem('userName', user.full_name || user.name || (user.email ? user.email.split('@')[0] : 'User'));
             return user;
         }
     } catch (err) {

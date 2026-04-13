@@ -351,8 +351,8 @@ export default function PermissionPage() {
                   <tr key={ds.dataset_id || ds.id}>
                     <td>{ds.name || ds.filename || 'Unknown'}</td>
                     <td>
-                      <span className={`admin-badge ${ds.status === 'completed' || ds.status === 'ready' ? 'green' : ds.status === 'processing' ? 'amber' : 'red'}`}>
-                        {ds.status || 'unknown'}
+                      <span className={`admin-badge ${ds.status === 'completed' || ds.status === 'ready' || ds.status === 'cleaned' ? 'green' : (ds.status === 'processing' || ds.status === 'cleaning') ? 'amber' : 'red'}`}>
+                        {ds.status === 'completed' || ds.status === 'ready' || ds.status === 'cleaned' ? 'Cleaned' : (ds.status === 'processing' || ds.status === 'cleaning' ? 'Cleaning' : (ds.status || 'unknown'))}
                       </span>
                     </td>
                     <td style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--text-muted)' }}>{formatDate(ds.created_at)}</td>

@@ -100,9 +100,11 @@ const DatasetsPage = () => {
         switch (status) {
             case 'completed':
             case 'ready':
-                return <span className="admin-badge green">● Ready</span>;
+            case 'cleaned':
+                return <span className="admin-badge green">● Cleaned</span>;
             case 'processing':
-                return <span className="admin-badge yellow">● Processing</span>;
+            case 'cleaning':
+                return <span className="admin-badge yellow">● Cleaning</span>;
             case 'failed':
                 return <span className="admin-badge red">● Failed</span>;
             default:
@@ -200,8 +202,8 @@ const DatasetsPage = () => {
 
                         <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: 10 }}>
                             <button className="admin-btn admin-btn-primary" style={{ flex: 1, height: 36, fontSize: 13 }}
-                                onClick={() => navigate(ds.status === 'ready' || ds.status === 'completed' ? `/employee/visualization?ds=${ds.dataset_id || ds.id}&name=${encodeURIComponent(ds.name)}` : `/employee/cleaning?ds=${ds.dataset_id || ds.id}&name=${encodeURIComponent(ds.name)}`)}>
-                                {ds.status === 'ready' || ds.status === 'completed' ? <><BarChart3 size={14} /> View Data</> : <><Sparkles size={14} /> Clean Data</>}
+                                onClick={() => navigate(ds.status === 'ready' || ds.status === 'completed' || ds.status === 'cleaned' ? `/employee/visualization?ds=${ds.dataset_id || ds.id}&name=${encodeURIComponent(ds.name)}` : `/employee/cleaning?ds=${ds.dataset_id || ds.id}&name=${encodeURIComponent(ds.name)}`)}>
+                                {ds.status === 'ready' || ds.status === 'completed' || ds.status === 'cleaned' ? <><BarChart3 size={14} /> View Data</> : <><Sparkles size={14} /> Clean Data</>}
                             </button>
                             <button className="admin-btn admin-btn-ghost admin-btn-sm" style={{ padding: '0 10px', height: 36 }} onClick={(e) => { e.stopPropagation(); setPreviewDataset(ds); }} title="Quick Preview">
                                 <Eye size={16} />
@@ -237,11 +239,11 @@ const DatasetsPage = () => {
                 >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
                         <div style={{ 
-                            background: dataset.status === 'completed' ? 'rgba(63, 185, 80, 0.15)' : 'rgba(210, 153, 34, 0.15)', 
+                            background: (dataset.status === 'completed' || dataset.status === 'ready' || dataset.status === 'cleaned') ? 'rgba(63, 185, 80, 0.15)' : 'rgba(210, 153, 34, 0.15)', 
                             padding: '0.75rem', 
                             borderRadius: '10px' 
                         }}>
-                            <FileText color={dataset.status === 'completed' ? 'var(--secondary)' : 'var(--warning)'} />
+                            <FileText color={(dataset.status === 'completed' || dataset.status === 'ready' || dataset.status === 'cleaned') ? 'var(--secondary)' : 'var(--warning)'} />
                         </div>
                         <div>
                             <h4 style={{ margin: 0, fontSize: '1.1rem' }}>{dataset.name}</h4>
@@ -252,10 +254,10 @@ const DatasetsPage = () => {
                                 <span>{dataset.rows_count || 0} Rows • {dataset.columns_count || 0} Columns</span>
                                 <span style={{ 
                                     textTransform: 'capitalize', 
-                                    color: dataset.status === 'completed' ? 'var(--secondary)' : 'var(--warning)',
+                                    color: (dataset.status === 'completed' || dataset.status === 'ready' || dataset.status === 'cleaned') ? 'var(--secondary)' : 'var(--warning)',
                                     fontWeight: 600
                                 }}>
-                                    {dataset.status}
+                                    {dataset.status === 'completed' || dataset.status === 'ready' || dataset.status === 'cleaned' ? 'Cleaned' : dataset.status}
                                 </span>
                             </div>
                         </div>
@@ -272,7 +274,7 @@ const DatasetsPage = () => {
                         >
                             <Eye size={18} />
                         </button>
-                        {dataset.status === 'completed' && (
+                        {(dataset.status === 'completed' || dataset.status === 'ready' || dataset.status === 'cleaned') && (
                             <button 
                                 className="btn-ghost"
                                 onClick={(e) => {
@@ -338,7 +340,7 @@ const DatasetsPage = () => {
                         <Database size={48} color="var(--text-muted)" style={{ marginBottom: '1.5rem' }} />
                         <h3>No datasets found</h3>
                         <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>Upload your first dataset to start generating insights.</p>
-                        {!isAdmin && <button className="btn-primary" onClick={() => navigate('/upload')}>Upload Dataset</button>}
+                        {isAdmin && <button className="btn-primary" onClick={() => navigate('/admin/upload')}>Upload Dataset</button>}
                     </div>
                 ) : (
                     isAdmin ? renderAdminContent() : renderEmployeeContent()

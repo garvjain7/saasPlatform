@@ -17,76 +17,79 @@ const pool = new Pool({
 });
 
 const runSchema = async () => {
-    const client = await pool.connect();
-    
+    // We connect to 'postgres' first to drop/create the DB if needed
+    const adminPool = new Pool({
+        host: process.env.DB_HOST || "localhost",
+        port: Number(process.env.DB_PORT) || 5432,
+        database: "postgres",
+        user: process.env.DB_USER || "postgres",
+        password: process.env.DB_PASSWORD || "",
+    });
+
     try {
-        // Check if database exists
-        const dbCheck = await client.query(
+        const adminClient = await adminPool.connect();
+        const dbName = process.env.DB_NAME || "newdatainsights";
+
+        console.log(`Checking database: ${dbName}...`);
+        const dbCheck = await adminClient.query(
             "SELECT 1 FROM pg_database WHERE datname = $1",
-            [process.env.DB_NAME || "datainsights"]
+            [dbName]
         );
-        
+
         if (dbCheck.rows.length === 0) {
-            // Create database
-            await client.query(`CREATE DATABASE ${process.env.DB_NAME || "datainsights"}`);
-            console.log("✅ Database created");
+            await adminClient.query(`CREATE DATABASE ${dbName}`);
+            console.log(`✅ Database ${dbName} created`);
         }
-        
-        // Connect to the target database
+
+        adminClient.release();
+        await adminPool.end();
+
+        // Now connect to the target database
         const targetPool = new Pool({
             host: process.env.DB_HOST || "localhost",
             port: Number(process.env.DB_PORT) || 5432,
-            database: process.env.DB_NAME || "datainsights",
+            database: dbName,
             user: process.env.DB_USER || "postgres",
             password: process.env.DB_PASSWORD || "",
         });
-        
-        const targetClient = await targetPool.connect();
-        
-        // Run schema
-        const schemaPath = path.join(process.cwd(), "src", "config", "schema.sql");
-        const schema = fs.readFileSync(schemaPath, "utf8");
-        await targetClient.query(schema);
-        console.log("✅ Schema created successfully");
-        
-        // Check and add default company if not exists
-        const companyCheck = await targetClient.query(
-            "SELECT 1 FROM companies WHERE company_id = '00000000-0000-0000-0000-000000000001'"
-        );
-        if (companyCheck.rows.length === 0) {
-            await targetClient.query(
-                "INSERT INTO companies (company_id, name) VALUES ('00000000-0000-0000-0000-000000000001', 'Default Company')"
-            );
-            console.log("✅ Default company created");
+
+        const client = await targetPool.connect();
+
+        // RUN SCHEMA (from root)
+        console.log("Applying schema from database_schema.sql...");
+        const schemaPath = path.join(process.cwd(), "..", "database_schema.sql");
+        if (fs.existsSync(schemaPath)) {
+            const schema = fs.readFileSync(schemaPath, "utf8");
+            // Execute schema segments (splitting by semi-colon to handle large scripts if needed)
+            await client.query(schema);
+            console.log("✅ Schema applied successfully");
+        } else {
+            console.warn("⚠️ Warning: database_schema.sql not found at project root");
         }
-        
-        // Check and add roles if not exists
-        const roleCheck = await targetClient.query("SELECT COUNT(*) FROM roles");
-        if (parseInt(roleCheck.rows[0].count) === 0) {
-            await targetClient.query(`INSERT INTO roles (role_name) VALUES 
-                ('admin'),
-                ('analyst'),
-                ('viewer'),
-                ('employee')`);
-            console.log("✅ Roles created");
+
+        // RUN SEED DATA (if exists)
+        const seedPath = path.join(process.cwd(), "src", "config", "seed_data.sql");
+        if (fs.existsSync(seedPath)) {
+            console.log("Loading snapshot data from seed_data.sql...");
+            const seed = fs.readFileSync(seedPath, "utf8");
+            await client.query(seed);
+            console.log("✅ Data snapshot restored successfully");
+        } else {
+            console.log("ℹ️ No seed_data.sql found. Using clean schema.");
         }
-        
-        // List tables
-        const result = await targetClient.query(
+
+        // Verification
+        const result = await client.query(
             "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
         );
-        console.log("Tables created:", result.rows.map(r => r.table_name).join(", "));
-        
-        targetClient.release();
+        console.log("\n🚀 Setup Complete. Tables ready:", result.rows.map(r => r.table_name).join(", "));
+
+        client.release();
         await targetPool.end();
-        
         process.exit(0);
     } catch (error) {
-        console.error("❌ Error:", error.message);
+        console.error("❌ Initialization failed:", error.message);
         process.exit(1);
-    } finally {
-        client.release();
-        await pool.end();
     }
 };
 

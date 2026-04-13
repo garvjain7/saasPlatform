@@ -6,6 +6,10 @@ import { sanitizeFilename } from "../utils/fileUtils.js";
 
 export const uploadDataset = async (req, res) => {
   try {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Only administrators can upload datasets.' });
+    }
+
     const totalElapsed = () => Date.now() - req.uploadStartTime;
     const stepElapsed = () => {
       const now = Date.now();
@@ -69,7 +73,7 @@ export const uploadDataset = async (req, res) => {
           req.file.originalname,
           finalFileName,
           req.file.size || null,
-          "processing",
+          "not_cleaned",
         ]
       );
       

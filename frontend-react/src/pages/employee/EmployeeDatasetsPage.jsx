@@ -9,7 +9,7 @@ const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
 
 const MOCK_DATASETS = [
   {
-    id: 'ds-001', name: 'Customer_Data', type: 'xlsx', status: 'ready',
+    id: 'ds-001', name: 'Customer_Data', type: 'xlsx', status: 'cleaned',
     source: 'acme-prod', path: '/data/crm/customers.xlsx',
     rows: 12450, cols: 24, size: '8.1 MB', version: 'v3',
     updated: '2 days ago',
@@ -31,7 +31,7 @@ const MOCK_DATASETS = [
     ]
   },
   {
-    id: 'ds-003', name: 'Finance_Q2_2024', type: 'xlsx', status: 'new',
+    id: 'ds-003', name: 'Finance_Q2_2024', type: 'xlsx', status: 'not_cleaned',
     source: 'acme-prod', path: '/data/finance/q2_2024.xlsx',
     rows: 3200, cols: 9, size: '1.8 MB', version: 'v1',
     updated: '5 days ago', versions: [],
@@ -67,7 +67,13 @@ const EmployeeDatasetsPage = () => {
             dataset_id: d.dataset_id || d._id,
             name: d.name || d.dataset_name || d.filename?.replace(/\.\w+$/, '') || `Dataset ${i + 1}`,
             type: d.filename?.split('.').pop() || d.name?.split('.').pop() || 'csv',
-            status: d.status === 'completed' ? 'ready' : d.status === 'processing' ? 'cleaning' : 'new',
+            status: (() => {
+              const s = d.status || d.upload_status || 'not_cleaned';
+              if (s === 'ready' || s === 'completed' || s === 'cleaned') return 'cleaned';
+              if (s === 'processing' || s === 'cleaning') return 'cleaning';
+              if (s === 'failed') return 'failed';
+              return 'not_cleaned';
+            })(),
             source: 'server',
             path: d.filename,
             rows: d.rows_count || d.rows,
@@ -177,10 +183,12 @@ const EmployeeDatasetsPage = () => {
 
   const StatusBadge = ({ status }) => {
     const config = {
-      ready: { bg: 'rgba(63,185,80,0.1)', color: '#3fb950', label: '● Ready' },
+      cleaned: { bg: 'rgba(63,185,80,0.1)', color: '#3fb950', label: '● Cleaned' },
+      completed: { bg: 'rgba(63,185,80,0.1)', color: '#3fb950', label: '● Cleaned' },
+      ready: { bg: 'rgba(63,185,80,0.1)', color: '#3fb950', label: '● Cleaned' },
       cleaning: { bg: 'rgba(210,153,34,0.1)', color: '#d29922', label: '⟳ Cleaning' },
-      new: { bg: 'rgba(139,148,158,0.1)', color: 'rgba(139, 148, 158, 0.8)', label: '○ Not Cleaned' },
-      'no-access': { bg: 'rgba(248,81,73,0.1)', color: '#f85149', label: '🔒 No Access' },
+      processing: { bg: 'rgba(210,153,34,0.1)', color: '#d29922', label: '⟳ Cleaning' },
+      not_cleaned: { bg: 'rgba(139,148,158,0.1)', color: 'rgba(139, 148, 158, 0.8)', label: '○ Not Cleaned' },
     }[status] || { bg: 'rgba(139,148,158,0.1)', color: 'rgba(139, 148, 158, 0.8)', label: status };
     return (
       <span className="emp-status-badge" style={{ background: config.bg, color: config.color }}>
@@ -228,9 +236,9 @@ const EmployeeDatasetsPage = () => {
           </select>
           <select className="emp-filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
             <option value="all">All Statuses</option>
-            <option value="ready">Ready</option>
+            <option value="cleaned">Cleaned</option>
             <option value="cleaning">Cleaning</option>
-            <option value="new">Not Cleaned</option>
+            <option value="not_cleaned">Not Cleaned</option>
           </select>
           <div className="emp-filter-divider" />
           <div className="emp-filter-count">
@@ -254,7 +262,7 @@ const EmployeeDatasetsPage = () => {
             <div className="emp-empty">
               <FileText size={48} color="var(--text-muted)" />
               <div className="emp-empty-title">No datasets found</div>
-              <div className="emp-empty-sub">Try adjusting your filters or upload a new dataset</div>
+              <div className="emp-empty-sub">Try adjusting your filters</div>
             </div>
           ) : (
             filtered.map((ds) => (
@@ -282,7 +290,7 @@ const EmployeeDatasetsPage = () => {
                         </div>
                       </div>
                     </div>
-                    <StatusBadge status={!ds.has_access ? 'no-access' : ds.status} />
+                    <StatusBadge status={ds.status} />
                   </div>
 
                   <div style={{ display: 'flex', gap: 20, marginBottom: 8 }}>
@@ -314,12 +322,10 @@ const EmployeeDatasetsPage = () => {
                 <div style={{ borderTop: '1px solid var(--border-color)', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(13,17,23,0.5)' }}>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button className="emp-btn emp-btn-ghost emp-btn-sm"
-                      disabled={!ds.has_access}
                       onClick={(e) => { e.stopPropagation(); openPreview(ds); }}>
                       <Eye size={12} /> Preview
                     </button>
                     <button className="emp-btn emp-btn-ghost emp-btn-sm"
-                      disabled={!ds.has_access}
                       onClick={(e) => { 
                         e.stopPropagation(); 
                         const dsId = ds.dataset_id || ds.id;
@@ -328,7 +334,6 @@ const EmployeeDatasetsPage = () => {
                       <BarChart3 size={12} /> Visualize
                     </button>
                     <button className="emp-btn emp-btn-primary emp-btn-sm"
-                      disabled={!ds.has_access}
                       onClick={(e) => { 
                         e.stopPropagation(); 
                         const dsId = ds.dataset_id || ds.id;
@@ -337,7 +342,6 @@ const EmployeeDatasetsPage = () => {
                       <Sparkles size={12} /> Clean
                     </button>
                   </div>
-                  {ds.has_access && (
                     <button 
                       className="emp-btn emp-btn-ghost emp-btn-sm"
                       onClick={(e) => { e.stopPropagation(); handleDelete(ds, e); }}
@@ -350,7 +354,6 @@ const EmployeeDatasetsPage = () => {
                         <Trash2 size={12} />
                       )}
                     </button>
-                  )}
                 </div>
               </div>
             ))

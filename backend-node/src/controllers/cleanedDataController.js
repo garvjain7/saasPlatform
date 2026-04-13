@@ -116,15 +116,38 @@ const resolveDatasetFile = async (datasetId, userEmail) => {
   );
   if (dsResult.rows.length === 0) return null;
   const { file_name, upload_status } = dsResult.rows[0];
-  const paths = getDatasetPaths(datasetId, file_name);
+  
+  const userResult = await pool.query("SELECT full_name FROM users WHERE email = $1", [userEmail]);
+  const fullName = userResult.rows[0]?.full_name;
+  const paths = getDatasetPaths(datasetId, file_name, fullName);
 
-  // Priority: cleaned > working > raw
-  for (const candidate of [paths.cleaned, paths.working, paths.raw]) {
+  const fs = (await import("fs/promises")).default;
+  const path = await import("path");
+  const tempDir = path.resolve(process.cwd(), "..", "uploads", "temp");
+
+  // Priority: 1. Temp (Specific user first, then any) > 2. Cleaned > 3. Raw
+  try {
+    const files = await fs.readdir(tempDir).catch(() => []);
+    const dsTempFiles = files.filter(f => f.startsWith(datasetId) && f.endsWith(".csv"));
+    if (dsTempFiles.length > 0) {
+      const userSafeName = fullName ? fullName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase() : 'unknown';
+      const userTempFile = dsTempFiles.find(f => f.includes(userSafeName));
+      return path.join(tempDir, userTempFile || dsTempFiles[0]);
+    }
+    
+    // Check Cleaned
     try {
-      await fs.access(candidate);
-      return candidate;
-    } catch {}
-  }
+      await fs.access(paths.cleaned);
+      return paths.cleaned;
+    } catch {
+      // Check Raw
+      try {
+        await fs.access(paths.raw);
+        return paths.raw;
+      } catch {}
+    }
+  } catch {}
+
   return null;
 };
 

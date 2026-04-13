@@ -122,21 +122,24 @@ export default function AdminDashboard() {
     switch (status) {
       case 'completed':
       case 'ready':
-        return <span className="admin-badge green">● Ready</span>;
+      case 'cleaned':
+        return <span className="admin-badge green">● Cleaned</span>;
       case 'processing':
-        return <span className="admin-badge yellow">● Processing</span>;
+      case 'cleaning':
+        return <span className="admin-badge yellow">● Cleaning</span>;
       case 'failed':
         return <span className="admin-badge red">● Failed</span>;
       default:
-        return <span className="admin-badge gray">○ {status || 'Unknown'}</span>;
+        return <span className="admin-badge gray">○ Not Cleaned</span>;
     }
   };
 
   const getDatasetStatus = (ds) => {
-    if (ds.status === 'completed' || ds.status === 'ready') return 'ready';
-    if (ds.status === 'processing') return 'processing';
-    if (ds.status === 'failed') return 'failed';
-    return ds.status || 'ready';
+    const s = ds.status || ds.upload_status;
+    if (s === 'completed' || s === 'ready' || s === 'cleaned') return 'cleaned';
+    if (s === 'processing' || s === 'cleaning') return 'cleaning';
+    if (s === 'failed') return 'failed';
+    return 'not_cleaned';
   };
 
   const formatSize = (bytes) => {
@@ -164,8 +167,9 @@ export default function AdminDashboard() {
     size: formatSize(ds.file_size || ds.size),
   }));
 
-  const readyDatasets = datasets.filter(d => d.status === 'completed' || d.status === 'ready').length;
-  const processingDatasets = datasets.filter(d => d.status === 'processing').length;
+  const cleanedDatasetsCount = datasets.filter(d => d.status === 'completed' || d.status === 'ready' || d.status === 'cleaned').length;
+  const cleaningDatasetsCount = datasets.filter(d => d.status === 'processing' || d.status === 'cleaning').length;
+  const notCleanedDatasetsCount = datasets.filter(d => d.status === 'not_cleaned' || !d.status).length;
 
   return (
     <AdminLayout title="Dashboard" subtitle={`Welcome, ${sessionStorage.getItem('userName') || 'Admin'}`}>
@@ -184,23 +188,23 @@ export default function AdminDashboard() {
           <div className="admin-stat-value admin-count-animate"><AnimatedNumber value={String(datasets.length)} /></div>
           <div className="admin-stat-label">Total Datasets</div>
           <div className="admin-stat-delta admin-delta-up">
-            <ArrowUpRight size={12} /> {readyDatasets} ready
+            <ArrowUpRight size={12} /> {cleanedDatasetsCount} cleaned
           </div>
         </div>
         <div className="admin-stat-card green">
           <Zap size={22} style={{ marginBottom: 12, color: 'var(--success)' }} />
-          <div className="admin-stat-value admin-count-animate"><AnimatedNumber value={String(readyDatasets)} /></div>
-          <div className="admin-stat-label">Ready for Analysis</div>
+          <div className="admin-stat-value admin-count-animate"><AnimatedNumber value={String(cleanedDatasetsCount)} /></div>
+          <div className="admin-stat-label">Cleaned Assets</div>
           <div className="admin-stat-delta admin-delta-up">
-            <TrendingUp size={12} /> {processingDatasets} processing
+            <TrendingUp size={12} /> {cleaningDatasetsCount} cleaning
           </div>
         </div>
-        <div className="admin-stat-card danger">
-          <AlertCircle size={22} style={{ marginBottom: 12, color: 'var(--danger)' }} />
-          <div className="admin-stat-value admin-count-animate"><AnimatedNumber value={String(processingDatasets)} /></div>
-          <div className="admin-stat-label">Processing</div>
-          <div className="admin-stat-delta admin-delta-down">
-            <ArrowUpRight size={12} /> In progress
+        <div className="admin-stat-card gray">
+          <Database size={22} style={{ marginBottom: 12, color: 'var(--text-muted)' }} />
+          <div className="admin-stat-value admin-count-animate"><AnimatedNumber value={String(notCleanedDatasetsCount)} /></div>
+          <div className="admin-stat-label">Not Cleaned</div>
+          <div className="admin-stat-delta">
+             Awaiting processing
           </div>
         </div>
       </div>
@@ -330,9 +334,14 @@ export default function AdminDashboard() {
               <div className="admin-section-title">Recent Datasets</div>
               <div className="admin-section-sub">All company uploads</div>
             </div>
-            <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => navigate('/datasets')}>
-              View All →
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="admin-btn admin-btn-primary admin-btn-sm" onClick={() => navigate('/admin/upload')}>
+                Upload Dataset
+              </button>
+              <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => navigate('/datasets')}>
+                View All →
+              </button>
+            </div>
           </div>
           <div className="admin-table-wrap">
             <table>
@@ -373,8 +382,8 @@ export default function AdminDashboard() {
                         </div>
                       </td>
                       <td>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', fontSize: '11px', fontWeight: 500, color: ds.status === 'ready' ? '#3fb950' : ds.status === 'processing' ? '#d29922' : '#f85149' }}>
-                          {ds.status === 'ready' ? '✓ Ready' : ds.status === 'processing' ? '⟳ Cleaning' : ds.status === 'chatbot' ? '● Chatbot On' : ds.status}
+                        <div style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', fontSize: '11px', fontWeight: 500, color: ds.status === 'cleaned' ? '#3fb950' : ds.status === 'cleaning' ? '#d29922' : '#f85149' }}>
+                          {ds.status === 'cleaned' ? 'Cleaned' : ds.status === 'cleaning' ? 'Cleaning' : ds.status}
                         </div>
                       </td>
                       <td>
@@ -397,20 +406,20 @@ export default function AdminDashboard() {
             <div className="admin-table-wrap" style={{ padding: '18px 20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
                 <div>
-                  <span style={{ fontSize: '18px', color: '#3fb950', fontWeight: 600 }}>{readyDatasets}</span>
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: 8 }}>Ready</span>
+                  <span style={{ fontSize: '18px', color: '#3fb950', fontWeight: 600 }}>{cleanedDatasetsCount}</span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: 8 }}>Cleaned</span>
                 </div>
                 <div>
-                  <span style={{ fontSize: '18px', color: '#d29922', fontWeight: 600 }}>{processingDatasets}</span>
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: 8 }}>Processing</span>
+                  <span style={{ fontSize: '18px', color: '#d29922', fontWeight: 600 }}>{cleaningDatasetsCount}</span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: 8 }}>Cleaning</span>
                 </div>
                 <div>
-                  <span style={{ fontSize: '18px', color: '#f85149', fontWeight: 600 }}>{datasets.filter(d => d.status === 'failed').length}</span>
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: 8 }}>Failed</span>
+                  <span style={{ fontSize: '18px', color: 'var(--text-muted)', fontWeight: 600 }}>{notCleanedDatasetsCount}</span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: 8 }}>Not Cleaned</span>
                 </div>
               </div>
               <div className="admin-storage-bar">
-                <div className="admin-storage-used" style={{ width: `${datasets.length > 0 ? (readyDatasets / datasets.length) * 100 : 0}%` }} />
+                <div className="admin-storage-used" style={{ width: `${datasets.length > 0 ? (cleanedDatasetsCount / datasets.length) * 100 : 0}%` }} />
               </div>
               <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: 'var(--text-muted)', marginTop: 6 }}>
                 {datasets.length} total datasets

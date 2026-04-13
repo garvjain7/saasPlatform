@@ -52,7 +52,7 @@ export default function LandingPage() {
         </p>
 
         <div className="hero-cta">
-          <Link to="/login" className="btn-hero-outline">Sign in to dashboard</Link>
+          <Link to="/login" className="btn-hero-outline">Explore Your Data</Link>
         </div>
 
         <div className="hero-stats">

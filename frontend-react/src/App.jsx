@@ -47,9 +47,9 @@ export default function App() {
         <Route path="/admin/logs" element={<ProtectedRoute allowedRoles={['admin']}><LogsPage /></ProtectedRoute>} />
         <Route path="/admin/permissions" element={<ProtectedRoute allowedRoles={['admin']}><PermissionPage /></ProtectedRoute>} />
         <Route path="/admin/employees" element={<ProtectedRoute allowedRoles={['admin']}><EmployeesPage /></ProtectedRoute>} />
+        <Route path="/admin/upload" element={<ProtectedRoute allowedRoles={['admin']}><AdminLayout><UploadPage /></AdminLayout></ProtectedRoute>} />
 
         {/* Data Pipeline (wrapped in MainLayout) */}
-        <Route path="/upload" element={<ProtectedRoute><MainLayout><UploadPage /></MainLayout></ProtectedRoute>} />
         <Route path="/datasets" element={<ProtectedRoute><MainLayout><DatasetsPage /></MainLayout></ProtectedRoute>} />
         <Route path="/dashboard/:datasetId" element={<ProtectedRoute><MainLayout><DashboardPage /></MainLayout></ProtectedRoute>} />
         <Route path="/chat/:datasetId" element={<ProtectedRoute><MainLayout><ChatPage /></MainLayout></ProtectedRoute>} />
@@ -58,7 +58,6 @@ export default function App() {
 
         {/* Employee Section (pages have their own layouts) */}
         <Route path="/employee" element={<Navigate to="/employee/datasets" replace />} />
-        <Route path="/employee/upload" element={<ProtectedRoute><UploadPage /></ProtectedRoute>} />
         <Route path="/employee/datasets" element={<ProtectedRoute><EmployeeDatasetsPage /></ProtectedRoute>} />
         <Route path="/employee/analysis" element={<ProtectedRoute><DatasetAnalysisPage /></ProtectedRoute>} />
         <Route path="/employee/column-cleaning" element={<ProtectedRoute><ColumnCleaningPage /></ProtectedRoute>} />

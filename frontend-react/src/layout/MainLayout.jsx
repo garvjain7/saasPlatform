@@ -48,9 +48,6 @@ const MainLayout = ({ children }) => {
 
           {role !== 'admin' && (
             <nav style={{ display: 'flex', gap: '1.5rem', marginLeft: '1rem' }}>
-              <Link to="/upload" className={location.pathname === '/upload' ? 'active-nav' : ''} style={{ textDecoration: 'none', color: 'var(--text-muted)', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <Upload size={16} /> Upload
-              </Link>
               <Link to="/datasets" className={location.pathname === '/datasets' ? 'active-nav' : ''} style={{ textDecoration: 'none', color: 'var(--text-muted)', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <Database size={16} /> Workspace
               </Link>

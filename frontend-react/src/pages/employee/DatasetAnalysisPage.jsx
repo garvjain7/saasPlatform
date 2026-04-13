@@ -86,7 +86,9 @@ const DatasetAnalysisPage = () => {
       try {
         const res = await getDatasets();
         if (res.success && res.data && res.data.length > 0) {
-          const readyDatasets = res.data.filter(d => d.status === 'completed' || d.status === 'ready');
+          const readyDatasets = res.data.filter(d => 
+            d.status === 'completed' || d.status === 'ready' || d.status === 'cleaned'
+          );
           setAvailableDatasets(readyDatasets);
 
           if (!datasetId && readyDatasets.length > 0) {
@@ -520,14 +522,11 @@ const DatasetAnalysisPage = () => {
         </div>
         <div className="emp-content">
           <div className="glass-panel" style={{ padding: '4rem 2rem', textAlign: 'center', maxWidth: 500, margin: '2rem auto' }}>
-            <Upload size={64} color="var(--text-muted)" style={{ marginBottom: '1.5rem', opacity: 0.5 }} />
+            <Database size={64} color="var(--text-muted)" style={{ marginBottom: '1.5rem', opacity: 0.5 }} />
             <h2 style={{ color: '#fff', marginBottom: '1rem' }}>No Datasets Available</h2>
             <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '0.95rem' }}>
-              Upload a dataset to start the analysis pipeline.
+              You have no datasets available for analysis.
             </p>
-            <button className="btn-primary" onClick={() => navigate('/employee/upload')} style={{ padding: '0.875rem 2rem', fontSize: '1rem' }}>
-              <Upload size={18} style={{ marginRight: '0.5rem' }} /> Upload Dataset
-            </button>
           </div>
         </div>
       </EmployeeLayout>
@@ -535,7 +534,7 @@ const DatasetAnalysisPage = () => {
   }
 
   // If dataset is still processing
-  if (selectedDataset && selectedDataset.status === 'processing') {
+  if (selectedDataset && (selectedDataset.status === 'processing' || selectedDataset.status === 'cleaning' || selectedDataset.status === 'not_cleaned')) {
     return (
       <EmployeeLayout>
         <div className="emp-topbar">
