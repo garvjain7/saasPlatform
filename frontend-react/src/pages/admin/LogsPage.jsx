@@ -9,16 +9,19 @@ function getMethodClass(event) {
     case 'LOGIN': return 'admin-method-get';
     case 'LOGOUT': return 'admin-method-get';
     case 'QUERY': return 'admin-method-get';
-    case 'CLEAN': return 'admin-method-post';
+    case 'CLEAN_START': return 'admin-method-post';
+    case 'CLEAN_DONE': return 'admin-method-post';
+    case 'CLEAN_PAUSE': return 'admin-method-blocked';
+    case 'CHAT_START': return 'admin-method-post';
+    case 'CHAT_END': return 'admin-method-get';
+    case 'PERM_REQUEST': return 'admin-method-post';
+    case 'PERM_DENIED': return 'admin-method-blocked';
     case 'VISUALIZE': return 'admin-method-post';
-    case 'VIEW_SUMMARY': return 'admin-method-get';
-    case 'ACCESS_DATASET': return 'admin-method-get';
     case 'UPLOAD': return 'admin-method-post';
-    case 'VIEW': return 'admin-method-get';
     case 'TRAIN': return 'admin-method-post';
-    case 'UPDATE': return 'admin-method-post';
     case 'SESSION': return 'admin-method-get';
     default: return 'admin-method-get';
+
   }
 }
 
@@ -27,16 +30,19 @@ function getEventIcon(event) {
     case 'LOGIN': return <Users size={12} />;
     case 'LOGOUT': return <Clock size={12} />;
     case 'QUERY': return <Database size={12} />;
-    case 'CLEAN': return <Sparkles size={12} />;
+    case 'CLEAN_START': return <Sparkles size={12} />;
+    case 'CLEAN_DONE': return <Check size={12} />;
+    case 'CLEAN_PAUSE': return <Clock size={12} />;
+    case 'CHAT_START': return <FileText size={12} />;
+    case 'CHAT_END': return <Clock size={12} />;
+    case 'PERM_REQUEST': return <Shield size={12} />;
+    case 'PERM_DENIED': return <Shield size={12} color="#f85149" />;
     case 'VISUALIZE': return <BarChart3 size={12} />;
-    case 'VIEW_SUMMARY': return <FileText size={12} />;
-    case 'ACCESS_DATASET': return <Eye size={12} />;
     case 'UPLOAD': return <Upload size={12} />;
-    case 'VIEW': return <Eye size={12} />;
     case 'TRAIN': return <BarChart3 size={12} />;
-    case 'UPDATE': return <FileText size={12} />;
     case 'SESSION': return <Clock size={12} />;
     default: return <FileText size={12} />;
+
   }
 }
 
@@ -144,9 +150,10 @@ export default function LogsPage() {
   const datasetOptions = ['all', ...datasets.map(d => d.dataset_name).filter(Boolean)];
 
   const totalLogins = logs.filter(l => l.event_type === 'LOGIN').length;
-  const totalCleans = logs.filter(l => l.event_type === 'CLEAN').length;
-  const totalQueries = logs.filter(l => l.event_type === 'QUERY').length;
-  const totalVisualizations = logs.filter(l => l.event_type === 'VISUALIZE').length;
+  const totalCleans = logs.filter(l => l.event_type === 'CLEAN_DONE' || l.event_type === 'CLEAN_START' || l.event_type === 'CLEAN').length;
+  const totalQueries = logs.filter(l => l.event_type === 'QUERY' || l.event_type === 'CHAT_START').length;
+  const totalPermissionIssues = logs.filter(l => l.event_type === 'PERM_DENIED' || l.event_type === 'PERM_REQUEST').length;
+
 
   return (
     <AdminLayout title="Activity Logs" subtitle="Employee activity tracking with real-time logs">
@@ -161,12 +168,13 @@ export default function LogsPage() {
         </div>
         <div className="admin-stat-card danger" style={{ padding: 16 }}>
           <div className="admin-stat-value" style={{ fontSize: 22 }}>{totalQueries}</div>
-          <div className="admin-stat-label">Queries Run</div>
+          <div className="admin-stat-label">AI Interactions</div>
         </div>
-        <div className="admin-stat-card" style={{ padding: 16, background: 'linear-gradient(135deg, rgba(167,139,250,0.2) 0%, rgba(139,92,246,0.1) 100%)' }}>
-          <div className="admin-stat-value" style={{ fontSize: 22, color: '#bc8cff' }}>{totalVisualizations}</div>
-          <div className="admin-stat-label">Visualizations</div>
+        <div className="admin-stat-card" style={{ padding: 16, background: 'linear-gradient(135deg, rgba(210,153,34,0.2) 0%, rgba(210,153,34,0.1) 100%)' }}>
+          <div className="admin-stat-value" style={{ fontSize: 22, color: '#d29922' }}>{totalPermissionIssues}</div>
+          <div className="admin-stat-label">Permission Events</div>
         </div>
+
       </div>
 
       <div className="admin-filter-bar">

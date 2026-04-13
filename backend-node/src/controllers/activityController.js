@@ -243,19 +243,20 @@ export const logEmployeeLogout = async (userId, userName, userEmail, durationSec
     userName,
     userEmail,
     eventType: "LOGOUT",
-    eventDescription: `Logged out${durationSeconds ? ` (session ~${durationSeconds}s)` : ""}`,
+    eventDescription: `Employee logged out${durationSeconds ? ` (Active for ${durationSeconds}s)` : ""}`,
     status: "ok",
     moduleName: "AUTH",
   });
 };
 
-export const logCleaningActivity = async (userId, userName, userEmail, datasetId, datasetName, status, detail) => {
+
+export const logCleaningActivity = async (userId, userName, userEmail, datasetId, datasetName, type, status, detail) => {
   return logActivity({
     userId,
     userName,
     userEmail,
-    eventType: "CLEAN",
-    eventDescription: detail || `Data cleaning on ${datasetName}`,
+    eventType: type || "CLEAN", // CLEAN_START, CLEAN_DONE, CLEAN_PAUSE
+    eventDescription: detail || `Data cleaning activity: ${type} on ${datasetName}`,
     datasetId,
     datasetName,
     detail,
@@ -263,6 +264,7 @@ export const logCleaningActivity = async (userId, userName, userEmail, datasetId
     moduleName: "PIPELINE",
   });
 };
+
 
 export const logQueryActivity = async (userId, userName, userEmail, datasetId, datasetName, query, status, durationSeconds) => {
   return logActivity({
@@ -321,5 +323,34 @@ export const logDatasetAccess = async (userId, userName, userEmail, datasetId, d
     detail: `Viewed dataset: ${datasetName}`,
     status,
     moduleName: "DATASET",
+  });
+};
+export const logChatActivity = async (userId, userName, userEmail, datasetId, datasetName, type, detail) => {
+  return logActivity({
+    userId,
+    userName,
+    userEmail,
+    eventType: type, // CHAT_START, CHAT_END
+    eventDescription: detail || `Chat session ${type === 'CHAT_START' ? 'started' : 'ended'} on ${datasetName}`,
+    datasetId,
+    datasetName,
+    detail,
+    status: "ok",
+    moduleName: "CHAT",
+  });
+};
+
+export const logPermissionActivity = async (userId, userName, userEmail, datasetId, datasetName, type, detail) => {
+  return logActivity({
+    userId,
+    userName,
+    userEmail,
+    eventType: type, // PERM_REQUEST, PERM_DENIED
+    eventDescription: detail || `Permission activity: ${type}`,
+    datasetId,
+    datasetName,
+    detail,
+    status: type === 'PERM_DENIED' ? "failed" : "ok",
+    moduleName: "PERMISSIONS",
   });
 };

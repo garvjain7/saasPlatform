@@ -117,6 +117,20 @@ CREATE TABLE query_logs (
 );
 
 -- =========================
+-- PERMISSION REQUESTS
+-- =========================
+CREATE TABLE permission_requests (
+    request_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    company_id UUID NOT NULL REFERENCES companies(company_id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    dataset_id UUID NOT NULL REFERENCES datasets(dataset_id) ON DELETE CASCADE,
+    permission_type TEXT NOT NULL,
+    status TEXT DEFAULT 'pending', -- 'pending', 'accepted', 'rejected'
+    requested_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- =========================
 -- INDEXES
 -- =========================
 CREATE INDEX idx_companies_company_id ON companies(company_id);

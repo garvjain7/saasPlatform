@@ -5,6 +5,8 @@ import { parse } from "csv-parse";
 import XLSX from "xlsx";
 import { pool } from "../config/db.js";
 import { validateDatasetAccess, getDatasetPaths } from "../utils/accessUtils.js";
+import { logCleaningActivity } from "./activityController.js";
+
 
 /** Map schema.txt columns to fields the React app already expects */
 export function mapDatasetRow(row) {
@@ -52,8 +54,9 @@ export const getAllDatasets = async (req, res) => {
       query += ` FROM datasets d
                  LEFT JOIN users u ON d.uploaded_by = u.user_id
                  INNER JOIN permissions p ON d.dataset_id = p.dataset_id
-                 WHERE d.company_id = $1 AND p.user_id = $2 AND p.can_view = TRUE `;
+                 WHERE d.company_id = $1 AND p.user_id = $2 AND p.can_view = TRUE AND d.upload_status != 'failed' `;
       params.push(user.user_id);
+
     } else {
       query += ` FROM datasets d
                  LEFT JOIN users u ON d.uploaded_by = u.user_id
@@ -85,6 +88,7 @@ export const getAllDatasetsAdmin = async (req, res) => {
        FROM datasets d
        LEFT JOIN users u ON d.uploaded_by = u.user_id
        LEFT JOIN companies c ON d.company_id = c.company_id
+       WHERE d.upload_status != 'failed'
        ORDER BY d.created_at DESC`
     );
     return res.json({
@@ -516,7 +520,18 @@ export const transformDataset = async (req, res) => {
     }
 
     // Set status to cleaning
+    const dsStatusResult = await pool.query("SELECT upload_status, dataset_name FROM datasets WHERE dataset_id = $1", [datasetId]);
+    const oldStatus = dsStatusResult.rows[0]?.upload_status;
+    const dsName = dsStatusResult.rows[0]?.dataset_name;
+
     await pool.query("UPDATE datasets SET upload_status = 'cleaning', updated_at = NOW() WHERE dataset_id = $1", [datasetId]);
+    
+    // Log CLEAN_START if this is the beginning of a cleaning session
+    if (oldStatus !== 'cleaning') {
+      await logCleaningActivity(user.user_id, user.full_name, userEmail, datasetId, dsName, 'CLEAN_START', "ok", "Cleaning session started");
+    }
+
+
 
     // Call Python transformer
     const { spawn } = await import("child_process");
@@ -592,11 +607,10 @@ export const finalizeDataset = async (req, res) => {
 
     await pool.query("UPDATE datasets SET upload_status = 'cleaned', updated_at = NOW() WHERE dataset_id = $1", [datasetId]);
     
-    // Log Activity
-    await pool.query(
-      "INSERT INTO activity_logs (user_id, dataset_id, activity_type, activity_description, status) VALUES ($1, $2, $3, $4, $5)",
-      [user.user_id, datasetId, 'FINALIZE', 'Cleaned dataset finalized', 'ok']
-    );
+    // Log Activity (CLEAN_DONE)
+    await logCleaningActivity(user.user_id, user.full_name, userEmail, datasetId, file_name, 'CLEAN_DONE', "ok", "Cleaning completed and finalized");
+
+
 
     return res.json({ success: true, message: "Dataset finalized and ready for visualization" });
   } catch (err) {
@@ -862,3 +876,61 @@ export const deleteDataset = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+export const pauseCleaning = async (req, res) => {
+  const datasetId = req.params.id;
+  const userEmail = req.user?.email;
+
+  try {
+    const userRes = await pool.query("SELECT user_id, full_name, role FROM users WHERE email = $1", [userEmail]);
+    const user = userRes.rows[0];
+    
+    const dsRes = await pool.query("SELECT dataset_name, upload_status FROM datasets WHERE dataset_id = $1", [datasetId]);
+    const dsName = dsRes.rows[0]?.dataset_name;
+    const status = dsRes.rows[0]?.upload_status;
+
+    if (status === 'cleaning') {
+      await logCleaningActivity(user.user_id, user.full_name, userEmail, datasetId, dsName, 'CLEAN_PAUSE', "ok", "Cleaning session paused (User left page)");
+      // Optional: Reset status to not_cleaned if no other user is cleaning? 
+      // For now, just log the pause.
+    }
+
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false });
+  }
+};
+
+export const getAvailableDatasetsToRequest = async (req, res) => {
+  const userEmail = req.user?.email;
+  try {
+    const userRes = await pool.query("SELECT user_id, company_id FROM users WHERE email = $1", [userEmail]);
+    const user = userRes.rows[0];
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    // Fetch datasets in company NOT assigned to user OR can_view is false
+    const query = `
+      SELECT d.*, u.full_name AS uploaded_by_name
+      FROM datasets d
+      LEFT JOIN users u ON d.uploaded_by = u.user_id
+      WHERE d.company_id = $1
+      AND d.upload_status != 'failed'
+      AND d.dataset_id NOT IN (
+        SELECT dataset_id FROM permissions WHERE user_id = $2 AND can_view = TRUE
+      )
+      ORDER BY d.created_at DESC
+
+    `;
+    const result = await pool.query(query, [user.company_id, user.user_id]);
+
+    res.json({
+      success: true,
+      data: result.rows.map(mapDatasetRow)
+    });
+  } catch (err) {
+    console.error("getAvailableDatasetsToRequest error:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+

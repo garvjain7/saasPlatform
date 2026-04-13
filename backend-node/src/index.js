@@ -13,6 +13,8 @@ import ragChatRoutes from "./routes/ragChatRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import cleanedDataRoutes from "./routes/cleanedDataRoutes.js";
 import activityRoutes from "./routes/activityRoutes.js";
+import permissionRoutes from "./routes/permissionRoutes.js";
+
 
 dotenv.config();
 await connectDB();
@@ -33,6 +35,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api", cleanedDataRoutes);
 app.use("/api", activityRoutes);
+app.use("/api/permissions", permissionRoutes);
+
 
 /* ========== HEALTH CHECK ========== */
 app.get("/", (req, res) => {

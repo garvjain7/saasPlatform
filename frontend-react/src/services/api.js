@@ -124,6 +124,12 @@ export const getDatasetsAdmin = async () => {
     return response.data;
 };
 
+export const getAvailableDatasetsToRequest = async () => {
+    const response = await api.get('/datasets/available-to-request');
+    return response.data;
+};
+
+
 export const deleteDataset = async (datasetId) => {
     const response = await api.delete(`/datasets/${datasetId}`);
     return response.data;
@@ -213,4 +219,47 @@ export const getQueryVolume = async (days = 7) => {
     return response.data;
 };
 
+// ---- Permissions & Requests ----
+export const requestPermission = async (datasetId, permissionType) => {
+    const response = await api.post('/permissions/request', { datasetId, permissionType });
+    return response.data;
+};
+
+export const getPendingPermissions = async () => {
+    const response = await api.get('/permissions/pending');
+    return response.data;
+};
+
+export const resolvePermission = async (requestId, status) => {
+    const response = await api.post('/permissions/resolve', { requestId, status });
+    return response.data;
+};
+
+export const getBadgeCounts = async () => {
+    const response = await api.get('/permissions/badge-counts');
+    return response.data;
+};
+
+// ---- Chat Sessions & Lifecycle ----
+export const startChatSession = async (datasetId) => {
+    const response = await api.post('/chat/start', { datasetId });
+    return response.data;
+};
+
+export const endChatSession = async (datasetId, reason) => {
+    const response = await api.post('/chat/end', { datasetId, reason });
+    return response.data;
+};
+
+export const pauseCleaning = async (datasetId) => {
+    const response = await api.post(`/datasets/${datasetId}/pause`);
+    return response.data;
+};
+
+export const logout = async () => {
+    const response = await api.post('/auth/logout');
+    return response.data;
+};
+
 export default api;
+

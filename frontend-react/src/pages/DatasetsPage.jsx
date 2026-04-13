@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+
 import { Database, Calendar, FileText, ChevronRight, Loader, BarChart3, Trash2, AlertTriangle, Sparkles, Users, Eye, Download } from 'lucide-react';
 import { getDatasets, deleteDataset, getDatasetAssignments, downloadDataset } from '../services/api';
 import MainLayout from '../layout/MainLayout';
@@ -15,8 +16,11 @@ const DatasetsPage = () => {
     const [assignModal, setAssignModal] = useState(null);
     const [previewDataset, setPreviewDataset] = useState(null);
     const [datasetAssignments, setDatasetAssignments] = useState({});
+    const [highlightedId, setHighlightedId] = useState(null);
     
     const navigate = useNavigate();
+    const location = useLocation();
+
     const role = sessionStorage.getItem('role');
     const isAdmin = role === 'admin';
 
@@ -54,8 +58,26 @@ const DatasetsPage = () => {
             datasets.forEach(ds => {
                 fetchAssignments(ds.dataset_id || ds.id);
             });
+
+            // Handle highlighting from Permission resolution
+            const params = new URLSearchParams(location.search);
+            const highlightId = params.get('highlight');
+            if (highlightId) {
+                setHighlightedId(highlightId);
+                // Scroll into view after a short delay
+                setTimeout(() => {
+                    const el = document.getElementById(`ds-card-${highlightId}`);
+                    if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }, 500);
+                
+                // Remove highlight after 5 seconds
+                setTimeout(() => setHighlightedId(null), 5000);
+            }
         }
-    }, [datasets, isAdmin]);
+    }, [datasets, isAdmin, location.search]);
+
 
     const handleDelete = async (datasetId, e) => {
         e.stopPropagation();
@@ -135,8 +157,17 @@ const DatasetsPage = () => {
     const renderAdminContent = () => (
         <div style={{ padding: '20px 0' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '20px' }}>
-                {datasets.map((ds) => (
-                    <div key={ds.dataset_id || ds.id} className="glass-panel" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                {datasets.map((ds) => {
+                    const dsId = ds.dataset_id || ds.id;
+                    const isHighlighted = highlightedId === dsId;
+                    return (
+                        <div 
+                            key={dsId} 
+                            id={`ds-card-${dsId}`}
+                            className={`glass-panel ${isHighlighted ? 'admin-card-highlight' : ''}`} 
+                            style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                        >
+
                         <div style={{ padding: '20px', flex: 1 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -216,8 +247,9 @@ const DatasetsPage = () => {
                             </button>
                         </div>
                     </div>
-                ))}
+                );})}
             </div>
+
         </div>
     );
 
@@ -361,7 +393,22 @@ const DatasetsPage = () => {
                     onClose={() => setPreviewDataset(null)} 
                 />
             )}
+
+            <style>{`
+                .admin-card-highlight {
+                    border: 2px solid var(--secondary) !important;
+                    box-shadow: 0 0 20px rgba(63, 185, 80, 0.4) !important;
+                    transform: scale(1.02);
+                    animation: pulse-border 2s infinite;
+                }
+                @keyframes pulse-border {
+                    0% { border-color: var(--secondary); box-shadow: 0 0 10px rgba(63, 185, 80, 0.3); }
+                    50% { border-color: #fff; box-shadow: 0 0 20px rgba(63, 185, 80, 0.6); }
+                    100% { border-color: var(--secondary); box-shadow: 0 0 10px rgba(63, 185, 80, 0.3); }
+                }
+            `}</style>
         </Layout>
+
     );
 };
 

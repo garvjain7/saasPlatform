@@ -1,8 +1,11 @@
 import { useState, useEffect, Fragment } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
+
+
 import { Shield, Check, X, Download, Loader, Users, Database, Clock, UserPlus } from 'lucide-react';
 import AdminLayout from '../../layout/AdminLayout';
-import { getUsers, getDatasets, updateUserRole, getPendingUsers, approveUser } from '../../services/api';
+import { getUsers, getDatasets, updateUserRole, getPendingUsers, approveUser, getPendingPermissions, resolvePermission } from '../../services/api';
+
 
 function getPermClass(perm) {
   switch (perm) {
@@ -37,20 +40,25 @@ export default function PermissionPage() {
   const [users, setUsers] = useState([]);
   const [datasets, setDatasets] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
+  const [pendingPermissions, setPendingPermissions] = useState([]);
   const [loading, setLoading] = useState(true);
+
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [usersRes, datasetsRes, pendingRes] = await Promise.all([
+      const [usersRes, datasetsRes, pendingRes, permRes] = await Promise.all([
         getUsers('all'),
         getDatasets(),
-        getPendingUsers()
+        getPendingUsers(),
+        getPendingPermissions()
       ]);
       setUsers(usersRes.users || []);
       setDatasets(datasetsRes.data || []);
       setPendingUsers(pendingRes.users || []);
+      setPendingPermissions(permRes.requests || []);
     } catch (err) {
+
       console.error('Failed to fetch data:', err);
     } finally {
       setLoading(false);
@@ -84,6 +92,26 @@ export default function PermissionPage() {
     }
   };
 
+  const navigate = useNavigate();
+
+  const handleResolvePermission = async (requestId, status) => {
+    try {
+      const request = pendingPermissions.find(r => r.request_id === requestId);
+      await resolvePermission(requestId, status);
+      
+      if (status === 'accepted' && request && request.permission_type === 'DATASET_ACCESS') {
+        // Navigate to datasets page with highlight and scroll instruction
+        navigate(`/datasets?highlight=${request.dataset_id}&requestId=${requestId}`);
+      } else {
+        fetchData();
+      }
+    } catch (err) {
+      console.error('Failed to resolve permission:', err);
+    }
+  };
+
+
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -93,11 +121,12 @@ export default function PermissionPage() {
   const totalCount = users.length;
 
   const tabs = [
-    { label: 'Pending Approval', count: pendingCount, icon: Clock },
+    { label: 'Access Requests', count: pendingPermissions.length, icon: Shield },
+    { label: 'New Registrations', count: pendingUsers.length, icon: Clock },
     { label: 'Active Users', count: activeCount, icon: Users },
-    { label: 'All Users', count: totalCount, icon: UserPlus },
     { label: 'Datasets', count: datasets.length, icon: Database },
   ];
+
 
   return (
     <AdminLayout title="User Approvals" subtitle="Manage user registrations and permissions">
@@ -121,25 +150,76 @@ export default function PermissionPage() {
 
       {/* Stats */}
       <div className="admin-three-col" style={{ marginBottom: 20 }}>
-        <div className="admin-stat-card accent" style={{ padding: 16 }}>
+        <div className="admin-stat-card green" style={{ padding: 16 }}>
+          <Shield size={20} style={{ marginBottom: 8, color: 'var(--success)' }} />
+          <div className="admin-stat-value" style={{ fontSize: 20 }}>{pendingPermissions.length}</div>
+          <div className="admin-stat-label">Access Requests</div>
+        </div>
+        <div className="admin-stat-card amber" style={{ padding: 16 }}>
           <Clock size={20} style={{ marginBottom: 8, color: 'var(--warning)' }} />
           <div className="admin-stat-value" style={{ fontSize: 20 }}>{pendingCount}</div>
-          <div className="admin-stat-label">Pending Approval</div>
+          <div className="admin-stat-label">Pending Users</div>
         </div>
-        <div className="admin-stat-card green" style={{ padding: 16 }}>
-          <Users size={20} style={{ marginBottom: 8, color: 'var(--success)' }} />
+        <div className="admin-stat-card accent" style={{ padding: 16 }}>
+          <Users size={20} style={{ marginBottom: 8, color: 'var(--primary)' }} />
           <div className="admin-stat-value" style={{ fontSize: 20 }}>{activeCount}</div>
           <div className="admin-stat-label">Active Users</div>
         </div>
-        <div className="admin-stat-card accent" style={{ padding: 16 }}>
-          <Database size={20} style={{ marginBottom: 8, color: 'var(--primary)' }} />
-          <div className="admin-stat-value" style={{ fontSize: 20 }}>{datasets.length}</div>
-          <div className="admin-stat-label">Datasets</div>
-        </div>
       </div>
 
-      {/* Pending Approval Section */}
+
+      {/* Access Requests Section */}
       {activeTab === 0 && (
+        <div style={{ marginBottom: 28 }}>
+          <div className="admin-section-header">
+            <div>
+              <div className="admin-section-title">Granular Access Requests</div>
+              <div className="admin-section-sub">{pendingPermissions.length} request{pendingPermissions.length !== 1 ? 's' : ''} for dataset permissions</div>
+            </div>
+            <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={fetchData} disabled={loading}>
+              <Loader size={12} style={loading ? { animation: 'spin 1s linear infinite' } : {}} /> Refresh
+            </button>
+          </div>
+
+          {pendingPermissions.length === 0 ? (
+            <div className="admin-table-wrap" style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              <Shield size={36} style={{ marginBottom: 12, opacity: 0.4 }} />
+              <p style={{ fontSize: '13px' }}>No pending access requests</p>
+            </div>
+          ) : (
+            pendingPermissions.map((req, i) => (
+              <div key={req.request_id} className="admin-request-card" style={{ animationDelay: `${i * 0.08}s` }}>
+                <div className="admin-u-avatar" style={{ background: '#bc8cff', width: 38, height: 38, fontSize: 15, borderRadius: 10, flexShrink: 0 }}>
+                  <Database size={18} />
+                </div>
+                <div className="admin-req-body">
+                  <div className="admin-req-title">
+                    <span style={{color:'var(--primary)'}}>{req.user_name}</span> is requesting <strong style={{color:'var(--secondary)'}}>{req.permission_type}</strong> access
+                  </div>
+                  <div className="admin-req-meta">
+                    <span>Dataset: <strong>{req.dataset_name}</strong></span>
+                    <span>Requested {formatDate(req.requested_at)}</span>
+                  </div>
+                  <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+                    <span className="admin-badge amber">Pending Response</span>
+                  </div>
+                </div>
+                <div className="admin-req-actions">
+                  <button className="admin-btn admin-btn-danger admin-btn-sm" onClick={() => handleResolvePermission(req.request_id, 'rejected')}>
+                    <X size={12} /> Reject
+                  </button>
+                  <button className="admin-btn admin-btn-success admin-btn-sm" onClick={() => handleResolvePermission(req.request_id, 'accepted')}>
+                    <Check size={12} /> Approve
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Pending Approval Section */}
+      {activeTab === 1 && (
         <div style={{ marginBottom: 28 }}>
           <div className="admin-section-header">
             <div>
@@ -190,7 +270,8 @@ export default function PermissionPage() {
       )}
 
       {/* Active Users Section */}
-      {activeTab === 1 && (
+      {activeTab === 2 && (
+
         <Fragment>
         <div className="admin-section-header">
           <div>
@@ -236,84 +317,19 @@ export default function PermissionPage() {
                     </td>
                     <td style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--text-muted)' }}>{user.email}</td>
                     <td>
-                      <select
-                        className="admin-role-select"
-                        value={user.role || 'employee'}
-                        onChange={e => handleRoleChange(user.email, e.target.value)}
-                        style={{ fontSize: 10 }}
-                      >
-                        <option value="admin">Admin</option>
-                        <option value="employee">Employee</option>
-                        <option value="viewer">Viewer</option>
-                      </select>
+                      <span style={{ fontSize: 11, color: '#fff', textTransform: 'capitalize' }}>{user.role || 'employee'}</span>
                     </td>
-                    <td style={{ fontFamily: "'DM Mono', monospace", fontSize: 11 }}>{user.datasets || 0}</td>
-                    <td>
-                      <span className={`admin-badge ${user.status === 'active' ? 'green' : user.status === 'inactive' ? 'gray' : 'amber'}`}>
-                        {user.status || 'active'}
-                      </span>
-                    </td>
-                    <td style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--text-muted)' }}>{formatDate(user.createdAt)}</td>
-                    <td>
-                      <button className="admin-btn admin-btn-ghost admin-btn-sm">Edit</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-        </Fragment>
-      )}
 
-      {/* All Users Section */}
-      {activeTab === 2 && (
-        <Fragment>
-        <div className="admin-section-header">
-          <div>
-            <div className="admin-section-title">All Users</div>
-            <div className="admin-section-sub">{users.length} total users</div>
-          </div>
-        </div>
-        <div className="admin-table-wrap">
-          {loading ? (
-            <div style={{ padding: '40px', textAlign: 'center' }}>
-              <Loader size={24} style={{ animation: 'spin 1s linear infinite', color: 'var(--primary)' }} />
-            </div>
-          ) : users.length === 0 ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-              No users found
-            </div>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>User</th>
-                  <th>Email</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Joined</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((user, i) => (
-                  <tr key={user.email}>
-                    <td>
-                      <div className="admin-user-cell">
-                        <div className="admin-u-avatar" style={{ background: user.color || '#58a6ff' }}>
-                          {user.name?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || '?'}
-                        </div>
-                        <div className="admin-u-name">{user.name || 'Unknown'}</div>
-                      </div>
-                    </td>
-                    <td style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--text-muted)' }}>{user.email}</td>
-                    <td>{user.role || 'employee'}</td>
+                    <td style={{ fontFamily: "'DM Mono', monospace", fontSize: 11 }}>{user.datasets_count || 0}</td>
                     <td>
                       <span className={`admin-badge ${user.is_active ? 'green' : 'amber'}`}>
                         {user.is_active ? 'Active' : 'Pending'}
                       </span>
                     </td>
-                    <td style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--text-muted)' }}>{formatDate(user.created_at)}</td>
+                    <td style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--text-muted)' }}>{formatDate(user.created_at || user.createdAt)}</td>
+                    <td>
+                      <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => navigate(`/admin/users/${encodeURIComponent(user.email)}`)}>Edit</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -323,8 +339,12 @@ export default function PermissionPage() {
         </Fragment>
       )}
 
+
+
+
       {/* Datasets Section */}
-      {activeTab === 3 && (
+      {activeTab === 4 && (
+
         <Fragment>
         <div className="admin-section-header">
           <div>

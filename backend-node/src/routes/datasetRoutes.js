@@ -17,7 +17,11 @@ import {
   getDatasetAssignments,
   getDatasetPreview,
   downloadDataset,
+  pauseCleaning,
+  getAvailableDatasetsToRequest,
+
 } from "../controllers/datasetController.js";
+
 import { protect } from "../middleware/protect.js";
 import { logCleaningActivity } from "../controllers/activityController.js";
 import { pool } from "../config/db.js";
@@ -31,6 +35,10 @@ const router = express.Router();
 
 // Get all datasets
 router.get("/datasets", protect, getAllDatasets);
+
+// Discover datasets to request access
+router.get("/datasets/available-to-request", protect, getAvailableDatasetsToRequest);
+
 
 // Get all datasets (admin - no company filter)
 router.get("/datasets-admin", protect, getAllDatasetsAdmin);
@@ -61,6 +69,8 @@ router.get("/datasets/:id/download", protect, downloadDataset);
 // Dataset Transformations (Workspace Model)
 router.post("/datasets/:id/transform", protect, transformDataset);
 router.post("/datasets/:id/finalize", protect, finalizeDataset);
+router.post("/datasets/:id/pause", protect, pauseCleaning);
+
 
 // Train ML model (Python script)
 router.post("/datasets/:id/train", protect, trainDataset);

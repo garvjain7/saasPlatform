@@ -265,18 +265,16 @@ export default function AdminDashboard() {
                         </div>
                       </td>
                       <td>
-                        <select
-                          className="admin-role-select"
-                          value={emp.role}
-                          onChange={e => handleRoleChange(emp.email, e.target.value)}
-                        >
-                          <option value="employee">employee</option>
-                          <option value="admin">admin</option>
-                          <option value="viewer">viewer</option>
-                        </select>
+                        <span style={{ fontSize: 11, color: '#fff', textTransform: 'capitalize' }}>{emp.role || 'employee'}</span>
                       </td>
-                      <td style={{ fontFamily: "'DM Mono', monospace", fontSize: '12px' }}>{emp.datasets || 0}</td>
-                      <td>{getStatusBadge(emp.is_active ? 'active' : 'inactive')}</td>
+
+                      <td style={{ fontFamily: "'DM Mono', monospace", fontSize: '12px' }}>{emp.datasets_count || 0}</td>
+                      <td>
+                        <span className={`admin-badge ${emp.is_active ? 'green' : 'amber'}`}>
+                          {emp.is_active ? 'Active' : 'Pending'}
+                        </span>
+                      </td>
+
                       <td><button className="admin-btn admin-btn-ghost admin-btn-sm">⋯</button></td>
                     </tr>
                   ))

@@ -3,6 +3,8 @@ import { spawn } from "child_process";
 import { pool } from "../config/db.js";
 import { validateDatasetAccess, getDatasetPaths } from "../utils/accessUtils.js";
 import fs from "fs/promises";
+import { logActivity, logChatActivity, logPermissionActivity } from "./activityController.js";
+
 
 export const askQuestion = async (req, res) => {
   const { message, question, datasetId } = req.body;
@@ -110,6 +112,20 @@ export const askQuestion = async (req, res) => {
         
         // Handle permission requests dynamically returned by python LLM
         if (result.success === false && result.require_permission) {
+          // Log Permission Denied
+          const dsNameRes = await pool.query("SELECT dataset_name FROM datasets WHERE dataset_id = $1", [datasetId]);
+          const dsName = dsNameRes.rows[0]?.dataset_name || "Unknown Dataset";
+          
+          await logPermissionActivity(
+            user.user_id,
+            user.full_name,
+            userEmail,
+            datasetId,
+            dsName,
+            "PERM_DENIED",
+            `User denied ${result.require_permission} on ${dsName} (Intent: ${result.intent})`
+          );
+
           return res.json({
             success: false,
             require_permission: result.require_permission,
@@ -117,6 +133,7 @@ export const askQuestion = async (req, res) => {
             intent: result.intent
           });
         }
+
 
         return res.json({
           success: true,
@@ -136,3 +153,36 @@ export const askQuestion = async (req, res) => {
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
+
+export const startChatSession = async (req, res) => {
+  try {
+    const { datasetId } = req.body;
+    const userId = req.user.user_id;
+    const email = req.user.email;
+    
+    const dsRes = await pool.query("SELECT dataset_name FROM datasets WHERE dataset_id = $1", [datasetId]);
+    const dsName = dsRes.rows[0]?.dataset_name || "Unknown Dataset";
+    
+    await logChatActivity(userId, null, email, datasetId, dsName, "CHAT_START");
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false });
+  }
+};
+
+export const endChatSession = async (req, res) => {
+  try {
+    const { datasetId, reason } = req.body; // reason: 'closed', 'cleared'
+    const userId = req.user.user_id;
+    const email = req.user.email;
+    
+    const dsRes = await pool.query("SELECT dataset_name FROM datasets WHERE dataset_id = $1", [datasetId]);
+    const dsName = dsRes.rows[0]?.dataset_name || "Unknown Dataset";
+    
+    await logChatActivity(userId, null, email, datasetId, dsName, "CHAT_END", `Session ended: ${reason || 'User finished'}`);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false });
+  }
+};
+

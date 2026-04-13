@@ -144,19 +144,29 @@ export const getAllUsers = async (req, res) => {
   const { role: roleFilter } = req.query;
   try {
     let query = `
-      SELECT user_id, company_id, full_name, email, role, department, designation, is_active, created_at
-      FROM users
+      SELECT 
+        u.user_id, u.company_id, u.full_name, u.email, u.role, u.department, u.designation, u.is_active, u.created_at,
+        COALESCE(count_data.count, 0)::int AS datasets_count
+      FROM users u
+      LEFT JOIN (
+        SELECT p.user_id, COUNT(d.dataset_id) as count
+        FROM permissions p
+        JOIN datasets d ON p.dataset_id = d.dataset_id
+        WHERE p.can_view = TRUE AND d.upload_status != 'failed'
+        GROUP BY p.user_id
+      ) count_data ON u.user_id = count_data.user_id
     `;
     const params = [];
 
     if (roleFilter && roleFilter !== "all") {
-      query += ` WHERE role = $1`;
+      query += ` WHERE u.role = $1`;
       params.push(roleFilter);
     }
 
-    query += ` ORDER BY created_at DESC`;
+    query += ` ORDER BY u.created_at DESC`;
 
     const result = await pool.query(query, params);
+
     res.json({ success: true, users: formatUsers(result.rows), count: result.rows.length });
   } catch (err) {
     console.error("getAllUsers error:", err);

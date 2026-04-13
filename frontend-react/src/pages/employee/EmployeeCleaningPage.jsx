@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import './EmployeeCleaningPage.css';
-import { getDatasetPreview, transformDataset, finalizeDataset } from '../../services/api';
+import { getDatasetPreview, transformDataset, finalizeDataset, pauseCleaning } from '../../services/api';
+
 
 const STEPS = [
   { id: 1, name: 'Null Values', shortName: 'Null Values' },
@@ -91,7 +92,17 @@ const EmployeeCleaningPage = () => {
     fetchData();
   }, [dsId, page]);
 
+  // Track page exit (Pause Logging)
+  useEffect(() => {
+    return () => {
+      if (dsId) {
+        pauseCleaning(dsId).catch(err => console.error("Pause logging failed:", err));
+      }
+    };
+  }, [dsId]);
+
   // Handle Drag Resizing
+
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (!dragging) return;

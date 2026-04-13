@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, FileText, Eye, ChevronDown, ChevronUp, RefreshCw, BarChart3, Trash2, AlertTriangle, X, Sparkles } from 'lucide-react';
+import { Search, FileText, Eye, ChevronDown, ChevronUp, RefreshCw, BarChart3, Trash2, AlertTriangle, X, Sparkles, Plus, Database, Loader } from 'lucide-react';
 import axios from 'axios';
-import { getDatasets, deleteDataset, getDatasetPreview } from '../../services/api';
+import { getDatasets, deleteDataset, getDatasetPreview, getAvailableDatasetsToRequest, requestPermission } from '../../services/api';
+
 import EmployeeLayout from '../../layout/EmployeeLayout';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
@@ -56,6 +57,13 @@ const EmployeeDatasetsPage = () => {
   const [previewModal, setPreviewModal] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [isDeleting, setIsDeleting] = useState(null);
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [availableDatasets, setAvailableDatasets] = useState([]);
+  const [isLoadingAvailable, setIsLoadingAvailable] = useState(false);
+  const [requestSearchQuery, setRequestSearchQuery] = useState('');
+  const [requestStatus, setRequestStatus] = useState({}); // {dsId: 'sending' | 'sent' | 'error'}
+
+
 
   useEffect(() => {
     const fetchData = async () => {
@@ -99,6 +107,38 @@ const EmployeeDatasetsPage = () => {
     };
     fetchData();
   }, []);
+
+  const fetchAvailable = async () => {
+    setIsLoadingAvailable(true);
+    try {
+      const res = await getAvailableDatasetsToRequest();
+      if (res.success) {
+        setAvailableDatasets(res.data || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch available datasets:", err);
+    } finally {
+      setIsLoadingAvailable(false);
+    }
+  };
+
+  const handleRequestAccess = async (dsId) => {
+    setRequestStatus(prev => ({ ...prev, [dsId]: 'sending' }));
+    try {
+      const res = await requestPermission(dsId, 'DATASET_ACCESS');
+      if (res.success) {
+        setRequestStatus(prev => ({ ...prev, [dsId]: 'sent' }));
+        setTimeout(() => {
+          setAvailableDatasets(prev => prev.filter(d => (d.dataset_id || d.id) !== dsId));
+        }, 1500);
+      } else {
+        setRequestStatus(prev => ({ ...prev, [dsId]: 'error' }));
+      }
+    } catch (err) {
+      setRequestStatus(prev => ({ ...prev, [dsId]: 'error' }));
+    }
+  };
+
 
   const openPreview = async (ds) => {
     const dsId = ds.dataset_id || ds.id;
@@ -214,6 +254,10 @@ const EmployeeDatasetsPage = () => {
               onChange={e => setSearchQuery(e.target.value)}
             />
           </div>
+          <button className="emp-btn emp-btn-primary" onClick={() => { setShowRequestModal(true); fetchAvailable(); }}>
+            <Plus size={14} /> Request New Dataset
+          </button>
+
         </div>
       </div>
 
@@ -489,6 +533,85 @@ const EmployeeDatasetsPage = () => {
           </div>
         </div>
       )}
+
+      {showRequestModal && (
+        <div className="emp-modal-overlay" onClick={() => setShowRequestModal(false)}>
+          <div className="glass-panel emp-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 600 }}>
+            <div className="emp-modal-header">
+              <div style={{ flex: 1 }}>
+                <div className="emp-modal-title">Request Dataset Access</div>
+                <div className="emp-modal-subtitle">Browse all company datasets and request permission to view them</div>
+              </div>
+              <button className="emp-btn emp-btn-ghost emp-btn-sm" onClick={() => setShowRequestModal(false)}>
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="emp-modal-body" style={{ maxHeight: '60vh', overflowY: 'auto', padding: '1rem' }}>
+              <div className="emp-search-bar" style={{ marginBottom: '1rem', width: '100%' }}>
+                <Search size={14} />
+                <input
+                  type="text"
+                  placeholder="Search and discover datasets…"
+                  value={requestSearchQuery}
+                  onChange={e => setRequestSearchQuery(e.target.value)}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              {isLoadingAvailable ? (
+                <div style={{ padding: '3rem', textAlign: 'center' }}>
+                  <Loader className="spin" size={24} color="var(--primary)" />
+                  <p style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>Fetching available datasets...</p>
+                </div>
+              ) : availableDatasets.filter(ds => ds.name?.toLowerCase().includes(requestSearchQuery.toLowerCase())).length === 0 ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <Database size={40} style={{ opacity: 0.3, marginBottom: '1rem' }} />
+                  <p>{requestSearchQuery ? 'No datasets match your search.' : 'No new datasets available to request right now.'}</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {availableDatasets.filter(ds => ds.name?.toLowerCase().includes(requestSearchQuery.toLowerCase())).map((ds) => {
+                    const dsId = ds.dataset_id || ds.id;
+                    const status = requestStatus[dsId];
+                    return (
+
+                      <div key={dsId} className="glass-panel" style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.02)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <Database size={18} color="var(--primary)" />
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#fff' }}>{ds.name}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                              {ds.uploaded_by_name ? `Uploaded by ${ds.uploaded_by_name}` : 'Company Dataset'}
+                            </div>
+                          </div>
+                        </div>
+                        <button 
+                          className={`emp-btn emp-btn-sm ${status === 'sent' ? 'emp-btn-success' : 'emp-btn-primary'}`}
+                          style={{ minWidth: status === 'sending' ? '90px' : 'auto' }}
+                          disabled={status === 'sending' || status === 'sent'}
+                          onClick={() => handleRequestAccess(dsId)}
+                        >
+                          {status === 'sending' ? <Loader size={12} className="spin" /> : 
+                           status === 'sent' ? 'Request Sent' : 
+                           status === 'error' ? 'Retry' : 'Request Access'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="emp-modal-footer">
+              <div className="emp-modal-footer-actions" style={{ justifyContent: 'flex-end' }}>
+                <button className="emp-btn emp-btn-ghost emp-btn-sm" onClick={() => setShowRequestModal(false)}>Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </EmployeeLayout>
   );
 };

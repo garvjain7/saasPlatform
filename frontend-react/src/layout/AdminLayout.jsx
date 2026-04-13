@@ -5,7 +5,8 @@ import {
   Menu, X, UploadCloud
 } from 'lucide-react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { getPendingUsers } from '../services/api';
+import { getBadgeCounts, logout } from '../services/api';
+
 
 const navItems = [
   {
@@ -41,15 +42,21 @@ export default function AdminLayout({ children, title, subtitle }) {
   const initials = adminName.slice(0, 2).toUpperCase();
 
   useEffect(() => {
-    // Fetch pending count
-    getPendingUsers().then(res => {
-        if (res && typeof res.count === 'number') {
-            setPendingCount(res.count);
+    // Fetch unified pending count (Users + Permissions)
+    getBadgeCounts().then(res => {
+        if (res && typeof res.total === 'number') {
+            setPendingCount(res.total);
         }
-    }).catch(err => console.warn('Failed to get pending users', err));
+    }).catch(err => console.warn('Failed to get unified badge counts', err));
   }, []);
 
-  const handleLogout = () => {
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (e) {
+      console.warn("Logout log failed:", e.message);
+    }
     sessionStorage.removeItem('token');
     sessionStorage.removeItem('role');
     sessionStorage.removeItem('email');
@@ -57,6 +64,7 @@ export default function AdminLayout({ children, title, subtitle }) {
     sessionStorage.removeItem('userName');
     navigate('/login');
   };
+
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-color)' }}>

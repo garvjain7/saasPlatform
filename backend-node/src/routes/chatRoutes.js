@@ -1,5 +1,6 @@
 import express from "express";
-import { askQuestion } from "../controllers/chatController.js";
+import { askQuestion, startChatSession, endChatSession } from "../controllers/chatController.js";
+
 import { queryLimiter } from "../middleware/rateLimiter.js";
 import { protect } from "../middleware/protect.js";
 import { logQueryActivity } from "../controllers/activityController.js";
@@ -70,4 +71,8 @@ const router = express.Router();
 router.post("/chat", protect, queryLimiter, wrapWithActivity(askQuestion));
 router.post("/query", protect, queryLimiter, wrapWithActivity(askQuestion));
 
+router.post("/chat/start", protect, startChatSession);
+router.post("/chat/end", protect, endChatSession);
+
 export default router;
+
