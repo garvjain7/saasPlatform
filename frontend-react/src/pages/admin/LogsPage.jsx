@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
-import { Filter, X, Loader, Database, Users, Clock, Eye, Sparkles, BarChart3, FileText, Upload } from 'lucide-react';
+import { Filter, X, Loader, Database, Users, Clock, Eye, Sparkles, BarChart3, FileText, Upload, Check, Shield } from 'lucide-react';
 import AdminLayout from '../../layout/AdminLayout';
 import { getActivityLogs, getActivityStats, getDatasetsAdmin } from '../../services/api';
 
@@ -75,9 +75,12 @@ function formatDuration(seconds) {
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 }
 
+const PAGE_SIZE = 50;
+
 export default function LogsPage() {
   const [loading, setLoading] = useState(true);
   const [logs, setLogs] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
   const [users, setUsers] = useState([]);
   const [events, setEvents] = useState([]);
   const [datasets, setDatasets] = useState([]);
@@ -125,10 +128,15 @@ export default function LogsPage() {
   };
 
   useEffect(() => {
+    setCurrentPage(1);
     fetchData();
   }, [employeeFilter, eventFilter, statusFilter, datasetFilter]);
 
   const filteredLogs = logs;
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / PAGE_SIZE));
+  const paginatedLogs = filteredLogs.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const rangeStart = filteredLogs.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(currentPage * PAGE_SIZE, filteredLogs.length);
 
   const hasFilters = employeeFilter !== 'All' || eventFilter !== 'all' || statusFilter !== 'all' || datasetFilter !== 'all';
 
@@ -204,8 +212,37 @@ export default function LogsPage() {
       <div className="admin-section-header">
         <div>
           <div className="admin-section-title">All Events</div>
-          <div className="admin-section-sub">Showing {filteredLogs.length} events</div>
+          <div className="admin-section-sub">{filteredLogs.length} total events</div>
         </div>
+        {!loading && filteredLogs.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: "'DM Mono', monospace", whiteSpace: 'nowrap' }}>
+              {rangeStart}–{rangeEnd} of {filteredLogs.length}
+            </span>
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              style={{
+                background: 'var(--surface-2)', border: '1px solid var(--border)',
+                borderRadius: 6, padding: '4px 8px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                opacity: currentPage === 1 ? 0.4 : 1, color: 'var(--text-main)', display: 'flex', alignItems: 'center'
+              }}
+            >
+              &#8249;
+            </button>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              style={{
+                background: 'var(--surface-2)', border: '1px solid var(--border)',
+                borderRadius: 6, padding: '4px 8px', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                opacity: currentPage === totalPages ? 0.4 : 1, color: 'var(--text-main)', display: 'flex', alignItems: 'center'
+              }}
+            >
+              &#8250;
+            </button>
+          </div>
+        )}
       </div>
       <div className="admin-table-wrap">
         {loading ? (
@@ -232,7 +269,7 @@ export default function LogsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredLogs.map((log, i) => (
+                  {paginatedLogs.map((log, i) => (
                     <tr
                       key={log.log_id || i}
                       style={{ animation: `adminSlideIn 0.35s cubic-bezier(0.16,1,0.3,1) ${i * 0.04}s both` }}
@@ -280,7 +317,7 @@ export default function LogsPage() {
             </div>
             {filteredLogs.length > 0 && (
               <div className="admin-pagination">
-                <div className="admin-page-info">Showing 1–{filteredLogs.length} events</div>
+                <div className="admin-page-info">{rangeStart}–{rangeEnd} of {filteredLogs.length} events</div>
               </div>
             )}
           </>

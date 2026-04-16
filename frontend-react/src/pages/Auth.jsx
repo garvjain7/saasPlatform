@@ -141,6 +141,7 @@ export default function Auth() {
             <div className="orb-2" />
             <div className="orb-3" />
 
+            {!loginSuccess && (
             <div className="auth-card">
                 <div className="auth-brand">
                     <div className="brand-icon">
@@ -233,6 +234,7 @@ export default function Auth() {
                     )}
                 </div>
             </div>
+            )}
 
             {loginSuccess && userData && (
                 <div className="auth-card" style={{ marginTop: 20 }}>

@@ -141,6 +141,7 @@ export default function EmployeeLogin() {
             <div className="orb-2" />
             <div className="orb-3" />
 
+            {!loginSuccess && (
             <div className="auth-card">
                 <div className="auth-brand">
                     <div className="brand-icon" style={{ background: 'linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%)' }}>
@@ -215,6 +216,7 @@ export default function EmployeeLogin() {
                     <Link to="/forgot-password">Forgot Password?</Link>
                 </div>
             </div>
+            )}
 
             {loginSuccess && userData && (
                 <div className="auth-card" style={{ marginTop: 20 }}>

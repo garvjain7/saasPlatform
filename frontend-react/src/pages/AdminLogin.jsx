@@ -125,6 +125,7 @@ export default function AdminLogin() {
             <div className="orb-2" />
             <div className="orb-3" />
 
+            {!loginSuccess && (
             <div className="auth-card">
                 <Link to="/" className="auth-back-link">
                     <ArrowLeftIcon /> Back to role selection
@@ -197,6 +198,7 @@ export default function AdminLogin() {
                     <Link to="/signup/admin">Create one</Link>
                 </div>
             </div>
+            )}
 
             {loginSuccess && userData && (
                 <div className="auth-card" style={{ marginTop: 20 }}>
